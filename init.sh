@@ -27,12 +27,12 @@ appSetup () {
 		sleep 30
 	fi
 
-        # Set host ip option
-        if [[ "$HOSTIP" != "NONE" ]]; then
+	# Set host ip option
+	if [[ "$HOSTIP" != "NONE" ]]; then
 		HOSTIP_OPTION="--host-ip=$HOSTIP"
-        else
+	else
 		HOSTIP_OPTION=""
-        fi
+	fi
 
 	# Set up samba
 	mv /etc/krb5.conf /etc/krb5.conf.orig
@@ -104,23 +104,11 @@ appStart () {
 	/usr/bin/supervisord
 }
 
-case "$1" in
-	start)
-		if [[ -f /etc/samba/external/smb.conf ]]; then
-			cp /etc/samba/external/smb.conf /etc/samba/smb.conf
-			appStart
-		else
-			echo "Config file is missing."
-		fi
-		;;
-	setup)
-		# If the supervisor conf isn't there, we're spinning up a new container
-		if [[ -f /etc/supervisor/conf.d/supervisord.conf ]]; then
-			appStart
-		else
-			appSetup
-		fi
-		;;
-esac
+# If the supervisor conf isn't there, we're spinning up a new container
+if [[ -f /etc/supervisor/conf.d/supervisord.conf ]]; then
+	appStart
+else
+	appSetup
+fi
 
 exit 0

@@ -6,8 +6,8 @@ HOSTNAME=VirtualUbuntu
 DOMAIN=corp.example.com
 COMPUTEROU="DC=corp,DC=example,DC=com"
 PROVISIONINGUSER=administrator
-OSNAME="Ubuntu Workstation"
-OSVERSION=18.04
+OSNAME=grep '^VERSION' /etc/os-release
+OSVERSION=egrep '^(VERSION|NAME)=' /etc/os-release
 SUDOUSERS="user1 administrator"
 USEDOMAININHOMEDIR="False"
 # ======================================
