@@ -1,6 +1,6 @@
 # Samba Active Directory Domain Controller for Docker
 
-A well documented, tried and tested Samba Active Directory Domain Controller that works with the standard Windows management tools; built from scratch using internal DNS and kerberos and not based on existing containers.
+A well documented, tried and tested Samba Active Directory Domain Controller that works with the standard Windows management tools; this is forked from the Fmstrat to build for ARMv8 and ARMv7. The goal of the fork is to getting it working on a Unifi Dream Machine, Raspberry Pi 3+/4 and/or integrate it into Unraid.
 
 ## Environment variables for quick start
 * `DOMAIN` defaults to `CORP.EXAMPLE.COM` and should be set to your domain
@@ -24,15 +24,15 @@ A well documented, tried and tested Samba Active Directory Domain Controller tha
 ```
 mkdir -p /data/docker/builds
 cd /data/docker/builds
-git clone https://github.com/Fmstrat/samba-domain.git
-cd samba-domain
-docker build -t samba-domain .
+git clone https://github.com/bowseruk/samba-dc.git
+cd samba-dc
+docker build -t samba-dc .
 ```
 
 Or just use the HUB:
 
 ```
-docker pull nowsci/samba-domain
+docker pull bowseruk/samba-dc
 ```
 
 ## Setting things up for the container
@@ -94,11 +94,11 @@ Then add a share to the end based on how you mount the volume:
         public = no
         read only = no
         writable = yes
-        write list = @root NOWSCI\myuser
+        write list = @root bowseruk\myuser
         force user = root
         force group = root
         guest ok = yes
-        valid users = NOWSCI\myuser
+        valid users = bowseruk\myuser
 ```
 Check the samba documentation for how to allow groups/etc.
 
@@ -183,7 +183,7 @@ done;
 ```
 
 # Examples with docker run
-Keep in mind, for all examples replace `nowsci/samba-domain` with `samba-domain` if you build your own from GitHub.
+Keep in mind, for all examples replace `bowseruk/samba-dc` with `samba-dc` if you build your own from GitHub.
 
 Start a new domain, and forward non-resolvable queries to the main DNS server
 * Local site is `192.168.3.0`
@@ -221,7 +221,7 @@ docker run -t -i \
 	-h localdc \
 	--name samba \
 	--privileged \
-	nowsci/samba-domain
+	bowseruk/samba-dc
 ```
 
 Join an existing domain, and forward non-resolvable queries to the main DNS server
@@ -263,7 +263,7 @@ docker run -t -i \
 	-h localdc \
 	--name samba \
 	--privileged \
-	nowsci/samba-domain
+	bowseruk/samba-dc
 ```
 
 Join an existing domain, forward DNS, remove security features, and connect to a remote site via openvpn
@@ -316,7 +316,7 @@ docker run -t -i \
 	--name samba \
 	--privileged \
 	--cap-add=NET_ADMIN --device /dev/net/tun \
-	nowsci/samba-domain
+	bowseruk/samba-dc
 ```
 
 
@@ -341,7 +341,7 @@ services:
 # ----------- samba begin ----------- #
 
   samba:
-    image: nowsci/samba-domain
+    image: bowseruk/samba-dc
     container_name: samba
     volumes:
       - /etc/localtime:/etc/localtime:ro
@@ -406,7 +406,7 @@ services:
 # ----------- samba begin ----------- #
 
   samba:
-    image: nowsci/samba-domain
+    image: bowseruk/samba-dc
     container_name: samba
     volumes:
       - /etc/localtime:/etc/localtime:ro
@@ -475,7 +475,7 @@ services:
 # ----------- samba begin ----------- #
 
   samba:
-    image: nowsci/samba-domain
+    image: bowseruk/samba-dc
     container_name: samba
     volumes:
       - /etc/localtime:/etc/localtime:ro
@@ -533,7 +533,7 @@ services:
 ```
 
 ## Joining the domain with Ubuntu
-For joining the domain with any client, everything should work just as you would expect if the active directory server was Windows based. For Ubuntu, there are many guides availble for joining, but to make things easier you can find an easily configurable script for joining your domain here: https://raw.githubusercontent.com/Fmstrat/samba-domain/master/ubuntu-join-domain.sh
+For joining the domain with any client, everything should work just as you would expect if the active directory server was Windows based. For Ubuntu, there are many guides availble for joining, but to make things easier you can find an easily configurable script for joining your domain here: https://raw.githubusercontent.com/bowseruk/samba-dc/master/ubuntu-join-domain.sh
 
 ## Troubleshooting
 
