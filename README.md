@@ -1,6 +1,6 @@
 # Samba Active Directory Domain Controller for Docker
 
-A well documented, tried and tested Samba Active Directory Domain Controller that works with the standard Windows management tools; this is forked from the Fmstrat to build for ARMv8 and ARMv7. The goal of the fork is to getting it working on a Unifi Dream Machine, Raspberry Pi 3+/4 and/or integrate it into Unraid.
+A well documented, tried and tested Samba Active Directory Domain Controller that works with the standard Windows management tools; this is a fork from the Fmstrat/Samba-domain repo to build for ARMv8 and ARMv7. The goal of the fork is to getting it working on a Unifi Dream Machine, Raspberry Pi 3+/4 and/or integrate it into Unraid.
 
 ## Environment variables for quick start
 * `DOMAIN` defaults to `CORP.EXAMPLE.COM` and should be set to your domain
