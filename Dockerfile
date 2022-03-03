@@ -150,5 +150,6 @@ VOLUME /var/lib/samba
 # Set up script and run
 #
 ADD init.sh /init.sh
+COPY samba-directory-templates.tar.gz /
 RUN chmod 755 /init.sh
 ENTRYPOINT /init.sh
