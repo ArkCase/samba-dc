@@ -139,6 +139,14 @@ RUN rm -rf /rpm /etc/yum.repos.d/armedia.repo
 RUN yum -y install openvpn
 
 #
+# Declare some important volumes
+#
+VOLUME /config
+VOLUME /vpn
+VOLUME /var/log/samba
+VOLUME /var/lib/samba
+
+#
 # Set up script and run
 #
 ADD init.sh /init.sh
