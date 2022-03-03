@@ -51,7 +51,7 @@ services:
         restart: unless-stopped
 
 #    dc-02:
-#        image: arm-samba:latest
+#        image: ark_samba:latest
 #        container_name: dc-02
 #        hostname: dc-02
 #        domainname: testdomain.priv
