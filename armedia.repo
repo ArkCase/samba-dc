@@ -1,0 +1,6 @@
+[armedia]
+name=Armedia Custom Builds Repository
+baseurl=file:///rpm
+enabled=1
+gpgcheck=0
+priority=1

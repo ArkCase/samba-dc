@@ -2,6 +2,8 @@
 
 A well documented, tried and tested Samba Active Directory Domain Controller that works with the standard Windows management tools; this is a fork from the Fmstrat/Samba-domain repo to build for ARMv8 and ARMv7. The goal of the fork is to getting it working on a Unifi Dream Machine, Raspberry Pi 3+/4 and/or integrate it into Unraid.
 
+This image has been modified to work based off of Rocky Linux 8.5, so much of the Ubuntu-centric stuff documented below will not work. This document will be updated with the alternatives appropriately.
+
 ## Environment variables for quick start
 * `DOMAIN` defaults to `CORP.EXAMPLE.COM` and should be set to your domain
 * `DOMAINPASS` should be set to your administrator password, be it existing or new. This can be removed from the environment after the first setup run.
