@@ -10,15 +10,16 @@ esac
 ${DEBUG} && set -x
 
 CONF_DIR="/config"
-SUPERVISOR_SAMBA_CONF="/etc/supervisord.d/samba-dc.ini"
-SUPERVISOR_OPENVPN_CONF="/etc/supervisord.d/openvpn.ini"
+SUPERVISOR_SMB_CONF="/etc/supervisord.d/samba-dc.ini"
+SUPERVISOR_VPN_CONF="/etc/supervisord.d/samba-vpn.ini"
+SMB_CONF="/etc/samba/smb.conf"
 EXT_SMB_CONF="${CONF_DIR}/smb.conf"
+KRB_CONF="/etc/krb5.conf"
 EXT_KRB_CONF="${CONF_DIR}/krb5.conf"
 
 #
 # Set and normalize variables
 #
-DOMAIN="${DOMAIN:-SAMDOM.LOCAL}"
 DOMAINPASS="${DOMAINPASS:-youshouldsetapassword}"
 JOIN="${JOIN:-false}"
 JOINSITE="${JOINSITE:-NONE}"
@@ -28,23 +29,24 @@ INSECURELDAP="${INSECURELDAP:-false}"
 DNSFORWARDER="${DNSFORWARDER:-NONE}"
 HOSTIP="${HOSTIP:-NONE}"
 
+DOMAIN="${DOMAIN:-SAMDOM.LOCAL}"
 LDOMAIN="${DOMAIN,,}"
 UDOMAIN="${DOMAIN^^}"
-URDOMAIN="${UDOMAIN%%.*}"
+REALM="${UDOMAIN%%.*}"
 
+D2=()
 IFS="." D2=(${DOMAIN})
 D3=()
 for P in "${D2[@]}" ; do
 	D3+=("DC=${P^^}")
 done
-unset D2
 
 DC=""
 for P in "${D3[@]}" ; do
 	[ -n "${DC}" ] && DC="${DC},"
 	DC="${DC}${P}"
 done
-unset D3
+unset D2 D3
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 
@@ -54,11 +56,43 @@ backup_file() {
 	return 0
 }
 
+ini_list_sections() {
+	local FILE="${1}"
+	[ -z "${FILE}" ] && return 1
+	grep "^[[:space:]]*\[[^\]\+]" "${FILE}" | sed -e 's/^\s*\[//g' -e 's/\].*$//g'
+}
+
+ini_has_section() {
+	local FILE="${1}"
+	local SECTION="${2}"
+	[ -z "${FILE}" ] && return 1
+	[ -z "${SECTION}" ] && return 1
+	ini_list_sections "${FILE}" | grep -q "${SECTION}"
+}
+
+ini_get_value() {
+	local FILE="${1}"
+	local SECTION="${2}"
+	local KEY="${3}"
+	[ -z "${FILE}" ] && return 1
+	[ -z "${SECTION}" ] && return 1
+	[ -z "${KEY}" ] && return 1
+	ini_has_section "${FILE}" "${SECTION}" || return 1
+	local KVP="$(sed -nr "/^\s*\[${SECTION}\]/,/\[/{/^\s*${KEY}\s*=/p}" "${FILE}" | tail -1)"
+	echo "${KVP#*=}" | sed -e 's;^[[:space:]]*;;g' -e 's;[[:space:]]*$;;g'
+}
+
+reset_data() {
+	echo "Cleaning up any vestigial configurations"
+	rm -rf /var/lib/samba/* /var/log/samba/*
+	tar -C / -xzf /samba-directory-templates.tar.gz
+}
+
 #
 # This function will check to see if the instance can be considered
 # "configured"
 #
-is_configured() {
+is_initialized() {
 	local CANDIDATES=()
 
 	#
@@ -109,8 +143,10 @@ is_configured() {
 	CANDIDATES+=("private/sam.ldb.d/DC=DOMAINDNSZONES,${DC}.ldb")
 	CANDIDATES+=("private/sam.ldb.d/DC=FORESTDNSZONES,${DC}.ldb")
 	CANDIDATES+=("private/sam.ldb.d/${DC}.ldb")
-	
 
+	#
+	# Check for the created databases
+	#
 	local PFX="/var/lib/samba"
 	for C in "${CANDIDATES[@]}" ; do
 		C="${PFX}/${C}"
@@ -141,15 +177,72 @@ is_configured() {
 	return 0
 }
 
+cfg_mismatch() {
+	local L="${1}"
+	local R1="${2}"
+	local R2="${3}"
 
-if ! is_configured ; then
+	echo "The existing configurations are for the ${L} [${R1}]"
+	echo "This container instance has been configured for the ${L} [${R2}]"
+	echo "This mismatch is unresolvable - please manually clean out the existing data files and logs, or fix the configuration file"
+}
 
-	# Should we do this?
-	echo "Cleaning up any vestigial configurations"
-	rm -rf /var/lib/samba/* /var/log/samba/*
-	tar -C / -xzf /samba-directory-templates.tar.gz
+check_krb_conf() {
+	[ -f "${EXT_KRB_CONF}" ] || return 1
+
+	local EXT_DOMAIN="$(ini_get_value "${EXT_KRB_CONF}" "libdefaults" "default_realm")"
+	[ "${EXT_DOMAIN^^}" = "${DOMAIN^^}" ] || { cfg_mismatch "kerberos realm" "${EXT_DOMAIN}" "${DOMAIN}" ; exit 1 ; }
+
+	return 0
+}
+
+check_smb_conf() {
+	[ -f "${EXT_SMB_CONF}" ] || return 1
+
+	local EXT_REALM="$(ini_get_value "${EXT_SMB_CONF}" "global" "workgroup")"
+	[ "${EXT_REALM^^}" = "${REALM^^}" ] || { cfg_mismatch "realm" "${EXT_REALM}" "${REALM}" ; exit 1 ; }
+
+	local EXT_DOMAIN="$(ini_get_value "${EXT_SMB_CONF}" "global" "realm")"
+	[ "${EXT_DOMAIN^^}" = "${DOMAIN^^}" ] || { cfg_mismatch "domain" "${EXT_DOMAIN}" "${DOMAIN}" ; exit 1 ; }
+
+	return 0
+}
+
+configure_krb() {
+	if check_krb_conf ; then
+		cp -f "${EXT_KRB_CONF}" "${KRB_CONF}"
+		return 0
+	fi
+
+	#
+	# Configure Kerberos
+	#
+	mv "${KRB_CONF}" "${KRB_CONF}".orig
+	cat <<-EOF > "${KRB_CONF}"
+		[libdefaults]
+		dns_lookup_realm = false
+		dns_lookup_kdc = true
+		default_realm = ${UDOMAIN}
+	EOF
+
+	backup_file "${EXT_KRB_CONF}"
+	cp -f "${KRB_CONF}" "${EXT_KRB_CONF}"
+
+	return 0
+}
+
+configure_smb() {
+	if check_smb_conf ; then
+		cp -f "${EXT_SMB_CONF}" "${SMB_CONF}"
+		return 0
+	fi
+
+	is_initialized && return 0
 
 	echo "Configuring the domain"
+
+	# Should we do this?
+	reset_data
 
 	# If multi-site, we need to connect to the VPN before joining the domain
 	if [ "${MULTISITE,,}" == "true" ]; then
@@ -164,29 +257,18 @@ if ! is_configured ; then
 	HOSTIP_OPTION=""
 	[ "${HOSTIP}" != "NONE" ] && HOSTIP_OPTION="--host-ip=${HOSTIP}"
 
-	# Set up samba
-	mv /etc/krb5.conf /etc/krb5.conf.orig
-	cat <<-EOF > /etc/krb5.conf
-	[libdefaults]
-	dns_lookup_realm = false
-	dns_lookup_kdc = true
-	default_realm = ${UDOMAIN}
-	EOF
-	backup_file "${EXT_KRB_CONF}"
-	cp /etc/krb5.conf "${EXT_KRB_CONF}"
-
 	# If the finished file isn't there, this is brand new, we're not just moving to a new container
-	mv /etc/samba/smb.conf /etc/samba/smb.conf.orig
+	mv "${SMB_CONF}" "${SMB_CONF}.orig"
 	if [ "${JOIN,,}" == "true" ]; then
 		if [ "${JOINSITE}" == "NONE" ]; then
-			samba-tool domain join "${LDOMAIN}" DC -U"${URDOMAIN}\\administrator" --password="${DOMAINPASS}" --dns-backend=SAMBA_INTERNAL
+			samba-tool domain join "${LDOMAIN}" DC -U"${REALM}\\administrator" --password="${DOMAINPASS}" --dns-backend=SAMBA_INTERNAL
 		else
-			samba-tool domain join "${LDOMAIN}" DC -U"${URDOMAIN}\\administrator" --password="${DOMAINPASS}" --dns-backend=SAMBA_INTERNAL --site="${JOINSITE}"
+			samba-tool domain join "${LDOMAIN}" DC -U"${REALM}\\administrator" --password="${DOMAINPASS}" --dns-backend=SAMBA_INTERNAL --site="${JOINSITE}"
 		fi
 	else
 		PROVISION_FLAGS=()
 		[ -n "${HOSTIP_OPTION}" ] && PROVISION_FLAGS+=("${HOSTIP_OPTION}")
-		samba-tool domain provision --use-rfc2307 --domain="${URDOMAIN}" --realm="${UDOMAIN}" --server-role=dc --dns-backend=SAMBA_INTERNAL --adminpass="${DOMAINPASS}" "${PROVISION_FLAGS[@]}"
+		samba-tool domain provision --use-rfc2307 --domain="${REALM}" --realm="${UDOMAIN}" --server-role=dc --dns-backend=SAMBA_INTERNAL --adminpass="${DOMAINPASS}" "${PROVISION_FLAGS[@]}"
 		if [[ ${NOCOMPLEXITY,,} == "true" ]]; then
 			samba-tool domain passwordsettings set --complexity=off
 			samba-tool domain passwordsettings set --history-length=0
@@ -199,33 +281,30 @@ if ! is_configured ; then
 		wins support = yes\\n\
 		template shell = /bin/bash\\n\
 		winbind nss info = rfc2307\\n\
-		idmap config ${URDOMAIN}: range = 10000-20000\\n\
-		idmap config ${URDOMAIN}: backend = ad\
-		" /etc/samba/smb.conf
+		idmap config ${REALM}: range = 10000-20000\\n\
+		idmap config ${REALM}: backend = ad\
+		" "${SMB_CONF}"
 	if [ "${DNSFORWARDER}" != "NONE" ]; then
 		sed -i "/\[global\]/a \
 			\\\tdns forwarder = ${DNSFORWARDER}\
-			" /etc/samba/smb.conf
+			" "${SMB_CONF}"
 	fi
 	if [ "${INSECURELDAP,,}" == "true" ]; then
 		sed -i "/\[global\]/a \
 			\\\tldap server require strong auth = no\
-			" /etc/samba/smb.conf
+			" "${SMB_CONF}"
 	fi
 	# Once we are set up, we'll make a file so that we know to use it if we ever spin this up again
 	backup_file "${EXT_SMB_CONF}"
-	cp /etc/samba/smb.conf "${EXT_SMB_CONF}"
-fi
+	cp -f "${SMB_CONF}" "${EXT_SMB_CONF}"
+	return 0
+}
 
 #
-# Apply the external configurations
+# Configure the components
 #
-cp "${EXT_SMB_CONF}" /etc/samba/smb.conf
-
-#
-# TODO: do we want to add Kerberos (krb5.conf) here? Samba has one ...
-#
-cp "${EXT_KRB_CONF}" /etc/krb5.conf
+configure_krb
+configure_smb
 
 #
 # Set up supervisor
@@ -233,18 +312,18 @@ cp "${EXT_KRB_CONF}" /etc/krb5.conf
 # We don't care if this is an old or new container ... we do it anyway to ensure
 # configuration consistency
 #
-cat <<-EOF > "${SUPERVISOR_SAMBA_CONF}"
+cat <<-EOF > "${SUPERVISOR_SMB_CONF}"
 [program:samba]
 command=/usr/sbin/samba -i
 EOF
 
 if [ "${MULTISITE,,}" = "true" ] ; then
 	[ -n "${VPNPID}" ] kill "${VPNPID}"
-	cat <<-EOF > "${SUPERVISOR_OPENVPN_CONF}"
+	cat <<-EOF > "${SUPERVISOR_VPN_CONF}"
 	[program:openvpn]
 	command=/usr/sbin/openvpn --config /docker.ovpn
 	EOF
 else
-	rm -f "${SUPERVISOR_OPENVPN_CONF}" &>/dev/null
+	rm -f "${SUPERVISOR_VPN_CONF}" &>/dev/null
 fi
 exec /usr/bin/supervisord -n
