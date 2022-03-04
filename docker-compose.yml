@@ -18,7 +18,7 @@ services:
         volumes:
             - /etc/localtime:/etc/localtime:ro
             - ./data/smb/01:/var/lib/samba
-            - ./conf/smb/01:/etc/samba/external
+            - ./conf/smb/01:/config
             - ./conf/vpn/01:/vpn
             - ./logs/smb/01:/var/log/samba
         environment:
@@ -45,8 +45,8 @@ services:
             - "192.168.2.32:464:464/tcp"
             - "192.168.2.32:464:464/udp"
             - "192.168.2.32:636:636/tcp"
-            - "192.168.2.32:1024-1044:1024-1044/tcp"
             - "192.168.2.32:3268-3269:3268-3269/tcp"
+            - "192.168.2.32:49152-49154:49152-49154/tcp"
         privileged: true
         restart: unless-stopped
 
@@ -96,8 +96,8 @@ services:
 #            - "192.168.2.33:464:464/tcp"
 #            - "192.168.2.33:464:464/udp"
 #            - "192.168.2.33:636:636/tcp"
-#            - "192.168.2.33:1024-1044:1024-1044/tcp"
 #            - "192.168.2.33:3268-3269:3268-3269/tcp"
+#            - "192.168.2.33:49152-49154:49152-49154/tcp"
 #        privileged: true
 #        restart: unless-stopped
 
