@@ -167,8 +167,9 @@ is_initialized() {
 	#
 	# Is this correct? Can a domain exist with no policies?
 	#
-	local POLICIES=$(find "${POLICY_DIR}" -type f -iname GPT.INI | wc -l)
-	[ "${POLICIES}" -lt 1 ] && return 1
+	# TODO: disabled for now, as additional DCs don't seem to copy them over
+	#local POLICIES=$(find "${POLICY_DIR}" -type f -iname GPT.INI | wc -l)
+	#[ "${POLICIES}" -lt 1 ] && return 1
 
 	#
 	# We're fully configured, so we don't have to redo it
