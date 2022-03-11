@@ -62,46 +62,50 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+          {{- if .Values.persistence.enabled }}
             - name: data
-              mountPath: {{ .Values.persistence.data.mountPath }}
-              {{- if and .Values.persistence.enabled .Values.persistence.data.subPath }}
-              subPath: {{ .Values.persistence.subPath }}
+              mountPath: {{ .Values.persistence.data.mountPath | quote }}
+              {{- if .Values.persistence.data.subPath }}
+              subPath: {{ .Values.persistence.subPath | quote }}
               {{- end }}
             - name: config
-              mountPath: {{ .Values.persistence.config.mountPath }}
-              {{- if and .Values.persistence.enabled .Values.persistence.config.subPath }}
-              subPath: {{ .Values.persistence.config.subPath }}
+              mountPath: {{ .Values.persistence.config.mountPath | quote }}
+              {{- if .Values.persistence.config.subPath }}
+              subPath: {{ .Values.persistence.config.subPath | quote }}
               {{- end }}
             - name: logs
-              mountPath: {{ .Values.persistence.logs.mountPath }}
-              {{- if and .Values.persistence.enabled .Values.persistence.logs.subPath }}
-              subPath: {{ .Values.persistence.logs.subPath }}
+              mountPath: {{ .Values.persistence.logs.mountPath | quote }}
+              {{- if .Values.persistence.logs.subPath }}
+              subPath: {{ .Values.persistence.logs.subPath | quote }}
               {{- end }}
+         {{- end }}
             - name: secrets
-              mountPath: /app/conf
+              mountPath: "/app/conf"
               readOnly: true
       volumes:
+        {{- if .Values.persistence.enabled }}
         - name: data
-          {{- if and .Values.persistence.enabled .Values.persistence.data.existingClaim }}
+          {{- if .Values.persistence.data.existingClaim }}
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.data.existingClaim }}
           {{- else }}
           emptyDir: {}
           {{- end }}
         - name: config
-          {{- if and .Values.persistence.enabled .Values.persistence.config.existingClaim }}
+          {{- if .Values.persistence.config.existingClaim }}
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.config.existingClaim }}
           {{- else }}
           emptyDir: {}
           {{- end }}
         - name: logs
-          {{- if and .Values.persistence.enabled .Values.persistence.logs.existingClaim }}
+          {{- if .Values.persistence.logs.existingClaim }}
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.logs.existingClaim }}
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- end }}
         - name: secrets
           secret:
             secretName: {{ include "ark-samba.fullname" . }}
