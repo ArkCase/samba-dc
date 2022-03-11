@@ -1,0 +1,167 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "ark-samba.fullname" . }}
+  labels:
+    {{- include "ark-samba.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ark-samba.selectorLabels" . | nindent 6 }}
+  serviceName: {{ include "ark-samba.fullname" . }}
+  template:
+    metadata:
+      annotations:
+        {{- if .Values.ports.metrics }}
+        # NB: Both these annotation values must be of type "string"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.ports.metrics | quote }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "ark-samba.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "ark-samba.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: samba
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            {{- if .Values.ports.ldaps }}
+            - name: ldaps
+              protocol: TCP
+              containerPort: {{ .Values.ports.ldaps }}
+            {{- else }}
+              {{- fail "The LDAPS port must be specified" }}
+            {{- end }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.ports.ldaps }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.ports.ldaps }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.data.mountPath }}
+              {{- if and .Values.persistence.enabled .Values.persistence.data.subPath }}
+              subPath: {{ .Values.persistence.subPath }}
+              {{- end }}
+            - name: config
+              mountPath: {{ .Values.persistence.config.mountPath }}
+              {{- if and .Values.persistence.enabled .Values.persistence.config.subPath }}
+              subPath: {{ .Values.persistence.config.subPath }}
+              {{- end }}
+            - name: logs
+              mountPath: {{ .Values.persistence.logs.mountPath }}
+              {{- if and .Values.persistence.enabled .Values.persistence.logs.subPath }}
+              subPath: {{ .Values.persistence.logs.subPath }}
+              {{- end }}
+            - name: secrets
+              mountPath: /app/conf
+              readOnly: true
+      volumes:
+        - name: data
+          {{- if and .Values.persistence.enabled .Values.persistence.data.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.data.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: config
+          {{- if and .Values.persistence.enabled .Values.persistence.config.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.config.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: logs
+          {{- if and .Values.persistence.enabled .Values.persistence.logs.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.logs.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: secrets
+          secret:
+            secretName: {{ include "ark-samba.fullname" . }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if and .Values.persistence.enabled (or (not .Values.persistence.data.existingClaim) (not .Values.persistence.config.existingClaim) (not .Values.persistence.logs.existingClaim)) }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        annotations:
+          {{- range $key, $value := .Values.persistence.data.annotations }}
+            {{ $key }}: {{ $value | quote }}
+          {{- end }}
+      spec:
+        accessModes:
+          {{- range .Values.persistence.data.accessModes }}
+          - {{ . | quote }}
+          {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.data.size | quote }}
+        storageClassName: {{ .Values.persistence.data.storageClass | default "standard" }}
+    - metadata:
+        name: config
+        annotations:
+          {{- range $key, $value := .Values.persistence.config.annotations }}
+            {{ $key }}: {{ $value | quote }}
+          {{- end }}
+      spec:
+        accessModes:
+          {{- range .Values.persistence.config.accessModes }}
+          - {{ . | quote }}
+          {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.config.size | quote }}
+        storageClassName: {{ .Values.persistence.config.storageClass | default "standard" }}
+    - metadata:
+        name: logs
+        annotations:
+          {{- range $key, $value := .Values.persistence.logs.annotations }}
+            {{ $key }}: {{ $value | quote }}
+          {{- end }}
+      spec:
+        accessModes:
+          {{- range .Values.persistence.logs.accessModes }}
+          - {{ . | quote }}
+          {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.logs.size | quote }}
+        storageClassName: {{ .Values.persistence.logs.storageClass | default "standard" }}
+  {{- end }}
