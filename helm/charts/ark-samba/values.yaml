@@ -46,33 +46,36 @@ ldap:
   externalHost:
     enabled: false
 
-ports:
-  metrics: 15145
-  ldap: 389
-  ldaps: 636
-    
 service:
   type: NodePort
-  port: 636
-
-readinessProbe:
-  initialDelaySeconds: 10
-  periodSeconds: 10
-  failureThreshold: 5
-  timeoutSeconds: 5
-
-livenessProbe:
-  initialDelaySeconds: 10
-  periodSeconds: 10
-  failureThreshold: 5
-  timeoutSeconds: 5
+  ports:
+    metrics:
+      name: metrics
+      protocol: TCP
+      port: 9100
+      targetPort: 9100
+    ldaps:
+      name: ldaps
+      protocol: TCP
+      port: 636
+      targetPort: 636
+      readinessProbe:
+        initialDelaySeconds: 10
+        periodSeconds: 10
+        failureThreshold: 5
+        timeoutSeconds: 5
+      livenessProbe:
+        initialDelaySeconds: 10
+        periodSeconds: 10
+        failureThreshold: 5
+        timeoutSeconds: 5
 
 persistence:
   enabled: true
   conf:
     mountPath: "/samba/conf/location-on-host"
     #subPath: ...
-    #size: ...
+    size: "1GB"
     #existingClaim: ...
     #annotations: ...
     #storageClass: ...
@@ -80,7 +83,7 @@ persistence:
   data:
     mountPath: "/samba/data/location-on-host"
     #subPath: ...
-    #size: ...
+    size: "1GB"
     #existingClaim: ...
     #annotations: ...
     #storageClass: ...
@@ -88,7 +91,7 @@ persistence:
   logs:
     mountPath: "/samba/logs/location-on-host"
     #subPath: ...
-    #size: ...
+    size: "1GB"
     #existingClaim: ...
     #annotations: ...
     #storageClass: ...

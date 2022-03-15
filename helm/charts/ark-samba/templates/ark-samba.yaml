@@ -5,7 +5,9 @@ metadata:
   labels:
     {{- include "ark-samba.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "ark-samba.selectorLabels" . | nindent 6 }}
@@ -13,10 +15,10 @@ spec:
   template:
     metadata:
       annotations:
-        {{- if .Values.ports.metrics }}
+        {{- if .Values.service.ports.metrics }}
         # NB: Both these annotation values must be of type "string"
         prometheus.io/scrape: "true"
-        prometheus.io/port: {{ .Values.ports.metrics | quote }}
+        prometheus.io/port: {{ .Values.service.ports.metrics.port | quote }}
         {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
@@ -38,27 +40,27 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
-            {{- if .Values.ports.ldaps }}
+            {{- if .Values.service.ports.ldaps }}
             - name: ldaps
-              protocol: TCP
-              containerPort: {{ .Values.ports.ldaps }}
+              protocol: {{ .Values.service.ports.ldaps.protocol }}
+              containerPort: {{ .Values.service.ports.ldaps.port }}
             {{- else }}
               {{- fail "The LDAPS port must be specified" }}
             {{- end }}
           readinessProbe:
             tcpSocket:
-              port: {{ .Values.ports.ldaps }}
-            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
-            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
-            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
-            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+              port: {{ .Values.service.ports.ldaps.port }}
+            initialDelaySeconds: {{ .Values.service.ports.ldaps.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.service.ports.ldaps.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.service.ports.ldaps.readinessProbe.failureThreshold }}
+            timeoutSeconds: {{ .Values.service.ports.ldaps.readinessProbe.timeoutSeconds }}
           livenessProbe:
             tcpSocket:
-              port: {{ .Values.ports.ldaps }}
-            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
-            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
-            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
-            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+              port: {{ .Values.service.ports.ldaps.port }}
+            initialDelaySeconds: {{ .Values.service.ports.ldaps.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.service.ports.ldaps.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.service.ports.ldaps.livenessProbe.failureThreshold }}
+            timeoutSeconds: {{ .Values.service.ports.ldaps.livenessProbe.timeoutSeconds }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
