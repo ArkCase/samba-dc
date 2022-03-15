@@ -68,10 +68,10 @@ spec:
               {{- if .Values.persistence.data.subPath }}
               subPath: {{ .Values.persistence.subPath | quote }}
               {{- end }}
-            - name: config
-              mountPath: {{ .Values.persistence.config.mountPath | quote }}
-              {{- if .Values.persistence.config.subPath }}
-              subPath: {{ .Values.persistence.config.subPath | quote }}
+            - name: conf
+              mountPath: {{ .Values.persistence.conf.mountPath | quote }}
+              {{- if .Values.persistence.conf.subPath }}
+              subPath: {{ .Values.persistence.conf.subPath | quote }}
               {{- end }}
             - name: logs
               mountPath: {{ .Values.persistence.logs.mountPath | quote }}
@@ -91,10 +91,10 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
-        - name: config
-          {{- if .Values.persistence.config.existingClaim }}
+        - name: conf
+          {{- if .Values.persistence.conf.existingClaim }}
           persistentVolumeClaim:
-            claimName: {{ .Values.persistence.config.existingClaim }}
+            claimName: {{ .Values.persistence.conf.existingClaim }}
           {{- else }}
           emptyDir: {}
           {{- end }}
@@ -121,7 +121,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-  {{- if and .Values.persistence.enabled (or (not .Values.persistence.data.existingClaim) (not .Values.persistence.config.existingClaim) (not .Values.persistence.logs.existingClaim)) }}
+  {{- if and .Values.persistence.enabled (or (not .Values.persistence.data.existingClaim) (not .Values.persistence.conf.existingClaim) (not .Values.persistence.logs.existingClaim)) }}
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -139,20 +139,20 @@ spec:
             storage: {{ .Values.persistence.data.size | quote }}
         storageClassName: {{ .Values.persistence.data.storageClass | default "standard" }}
     - metadata:
-        name: config
+        name: conf
         annotations:
-          {{- range $key, $value := .Values.persistence.config.annotations }}
+          {{- range $key, $value := .Values.persistence.conf.annotations }}
             {{ $key }}: {{ $value | quote }}
           {{- end }}
       spec:
         accessModes:
-          {{- range .Values.persistence.config.accessModes }}
+          {{- range .Values.persistence.conf.accessModes }}
           - {{ . | quote }}
           {{- end }}
         resources:
           requests:
-            storage: {{ .Values.persistence.config.size | quote }}
-        storageClassName: {{ .Values.persistence.config.storageClass | default "standard" }}
+            storage: {{ .Values.persistence.conf.size | quote }}
+        storageClassName: {{ .Values.persistence.conf.storageClass | default "standard" }}
     - metadata:
         name: logs
         annotations:

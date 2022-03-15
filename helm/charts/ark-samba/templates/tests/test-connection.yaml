@@ -1,25 +1,29 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: "{{ include "ark-samba.fullname" . }}-test-connection"
+  name: "sambaTestConnection"
   labels:
     {{- include "ark-samba.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": test
+    'helm.sh/hook': test
 spec:
   containers:
     - name: openldap
       image: bitnami/openldap
-      command: ["/opt/bitnami/openldap/bin/ldapsearch"]
+      command: [ '/opt/bitnami/openldap/bin/ldapsearch' ]
+      args: [ '-H', 'ldaps://samba:{{ .Values.service.port }}',
+        '-D', '{{ .Values.domain.realm }}\administrator'
+        '-w', {{ .Values.domain.password | quote }}
+        '-b', {{ .Values.domain.dc | quote }}
+        '(objectClass=user)', 'dn' ]
       env:
-        - name: LDAPTLS_REQCERT
-          value: "never"
-        - name: ADMIN_PASS
+        - name: 'LDAPTLS_REQCERT'
+          value: 'never'
+        - name: 'ADMIN_PASS'
           valueFrom:
             secretKeyRef:
               name: {{ template "ark-samba.fullname" . }}
-              key: domain-password
+              key: 'domain.password'
 # TODO: how to calculate the dc=XXX stuff from the domain? I have a shellscript that can do it, but how to invoke it?
 # TODO: how to calculate the realm name the domain? I have a shellscript that can do it, but how to invoke it?
-      args: [ '-H', 'ldaps://{{ include "ark-samba.fullname" . }}:{{ .Values.service.ports.ldaps }}', '-D', '{{ realm-name }}\administrator', '-w', '$ADMIN_PASS', '-b', '{{ dc=XXX,dc=XXX }}', '(objectClass=user)', 'dn' ]
   restartPolicy: Never
