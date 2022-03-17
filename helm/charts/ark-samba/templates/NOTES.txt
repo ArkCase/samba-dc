@@ -1,3 +1,0 @@
-Check that LDAPS is running by using the following command:
-
-    $ ldapsearch -H ldaps://{{ template "ark-samba.fullname" . }}:{{ .Values.service.ports.ldaps.port }} -D '{{ .Values.domain.realm }}\administrator' -w {{ .Values.domain.password | quote }} -b {{ .Values.domain.dc | quote }} '(objectClass=user)' dn
