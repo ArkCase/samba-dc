@@ -301,6 +301,27 @@ configure_smb() {
 	return 0
 }
 
+configure_k8s() {
+	local DNS_IP=""
+	
+	[ -n "${KUBERNETES_SERVICE_HOST}" ] || return 1
+
+	# We've been explicitly told who our forwarder is, so we don't use it
+	# TODO: Support setting a name here that can be looked up via K8s DNS
+	#       perhaps by checking to see if we've been given an IP address
+	#       or a hostname?
+	[ -n "${DNSFORWARDER}" ] && return 0
+
+	# Lookup the DNS name kube-dns.kube-system.svc.cluster.local
+	local K8S_DNS="$(dig +short "kube-dns.kube-system.svc.cluster.local")"
+	[ -n "${K8S_DNS}" ] || return 1
+	
+	DNSFORWARDER="${K8S_DNS}"
+}
+
+# In case we're in Kubernetes
+configure_k8s
+
 #
 # Configure the components
 #
