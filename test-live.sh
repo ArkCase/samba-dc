@@ -145,6 +145,9 @@ fi
 echo -e "Port 636/tcp seems to be listening and serving out certificates"
 ${DEBUG} && echo -e "${CERTS}"
 
+# TODO: Do we want to validate the certificate?
+export LDAPTLS_REQCERT="never"
+
 ${DEBUG} && set -x
 LDAP="$(ldapsearch -H ldaps://localhost:636 -D "${REALM}\administrator" -w "${DOMAINPASS}" -b "${DC}" '(objectClass=user)' dn 2>&1)"
 RC=${?}
@@ -154,7 +157,7 @@ if [ ${RC} -ne 0 ] ; then
 	echo -e "${LDAP}"
 	exit 1
 fi
-echo -e "LDAP Search successful:"
+echo -e "LDAP Search successful"
 ${DEBUG} && echo -e "${LDAP}"
 
 # All appears to be well!
