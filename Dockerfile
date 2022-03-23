@@ -150,6 +150,8 @@ VOLUME /var/lib/samba
 # Set up script and run
 #
 ADD init.sh /init.sh
+ADD test-ready.sh /test-ready.sh
+ADD test-live.sh /test-live.sh
 COPY samba-directory-templates.tar.gz /
 RUN chmod 755 /init.sh
 ENTRYPOINT /init.sh
