@@ -134,12 +134,24 @@ is_initialized() {
 }
 
 ${DEBUG} && set -x
-CERTS="$(openssl s_client -connect localhost:636 -showcerts </dev/null 2>1)"
+OUT="$(supervisorctl status samba 2>&1)"
+RC=${?}
+${DEBUG} && set +x
+if [ ${RC} -ne 0 ] ; then
+	echo -e "Failed to verify the Samba process status"
+	echo -e "${OUT}"
+	exit 1
+fi
+echo -e "SupervisorD reports the Samba process as running"
+${DEBUG} && echo -e "${OUT}"
+
+${DEBUG} && set -x
+OUT="$(openssl s_client -connect localhost:636 -showcerts </dev/null 2>1)"
 RC=${?}
 ${DEBUG} && set +x
 if [ ${RC} -ne 0 ] ; then
 	echo -e "Failed to get the SSL certificates from the LDAPS server"
-	echo -e "${CERTS}"
+	echo -e "${OUT}"
 	exit 1
 fi
 echo -e "Port 636/tcp seems to be listening and serving out certificates"
@@ -149,16 +161,16 @@ ${DEBUG} && echo -e "${CERTS}"
 export LDAPTLS_REQCERT="never"
 
 ${DEBUG} && set -x
-LDAP="$(ldapsearch -H ldaps://localhost:636 -D "${REALM}\administrator" -w "${DOMAINPASS}" -b "${DC}" '(objectClass=user)' dn 2>&1)"
+OUT="$(ldapsearch -H ldaps://localhost:636 -D "${REALM}\administrator" -w "${DOMAINPASS}" -b "${DC}" '(objectClass=user)' dn 2>&1)"
 RC=${?}
 ${DEBUG} && set +x
 if [ ${RC} -ne 0 ] ; then
 	echo -e "Failed to execute a test LDAPS query"
-	echo -e "${LDAP}"
+	echo -e "${OUT}"
 	exit 1
 fi
 echo -e "LDAP Search successful"
-${DEBUG} && echo -e "${LDAP}"
+${DEBUG} && echo -e "${OUT}"
 
 # All appears to be well!
 echo -e "The instance is live"
