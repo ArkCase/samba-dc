@@ -134,7 +134,7 @@ is_initialized() {
 }
 
 ${DEBUG} && set -x
-CERTS="$(openssl s_client -connect localhost:636 -show_certs </dev/null 2>1)"
+CERTS="$(openssl s_client -connect localhost:636 -showcerts </dev/null 2>1)"
 RC=${?}
 ${DEBUG} && set +x
 if [ ${RC} -ne 0 ] ; then
