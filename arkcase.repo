@@ -1,5 +1,5 @@
-[armedia]
-name=Armedia Custom Builds Repository
+[ArkCase]
+name=ArkCase Custom Builds Repository
 baseurl=file:///rpm
 enabled=1
 gpgcheck=0

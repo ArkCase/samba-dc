@@ -18,8 +18,8 @@ ARG SRC="https://dl.rockylinux.org/pub/rocky/8/BaseOS/source/tree/Packages/s/sam
 #
 # Some important labels
 #
-LABEL ORG="Armedia LLC"
-LABEL MAINTAINER="Armedia Devops Team <devops@armedia.com>"
+LABEL ORG="ArkCase LLC"
+LABEL MAINTAINER="ArkCase Support <support@arkcase.com>"
 LABEL APP="Samba"
 LABEL VERSION="${VER}"
 
@@ -50,7 +50,7 @@ RUN rpmbuild --clean --rebuild "libldb-${LDB_VER}.${LDB_DIST}.src.rpm"
 WORKDIR /root/rpmbuild
 RUN yum -y install createrepo
 RUN createrepo RPMS
-COPY armedia.repo /etc/yum.repos.d
+COPY arkcase.repo /etc/yum.repos.d
 RUN ln -svf $(readlink -f RPMS) /rpm
 
 RUN yum -y install python3-ldb python3-ldb-devel
@@ -92,8 +92,8 @@ ARG PKG="samba"
 #
 # Some important labels
 #
-LABEL ORG="Armedia LLC"
-LABEL MAINTAINER="Armedia Devops Team <devops@armedia.com>"
+LABEL ORG="ArkCase LLC"
+LABEL MAINTAINER="ArkCase Support <support@arkcase.com>"
 LABEL APP="Samba"
 LABEL VERSION="${VER}"
 
@@ -105,7 +105,7 @@ RUN yum -y install epel-release yum-utils
 RUN yum -y update
 RUN yum-config-manager --setopt=*.priority=50 --save
 COPY --from=src /root/rpmbuild/RPMS /rpm
-COPY armedia.repo /etc/yum.repos.d
+COPY arkcase.repo /etc/yum.repos.d
 RUN yum -y install \
 		attr \
 		bind-utils \
@@ -130,7 +130,7 @@ RUN yum -y install \
 		supervisor \
 		telnet \
 		which
-RUN rm -rf /rpm /etc/yum.repos.d/armedia.repo
+RUN rm -rf /rpm /etc/yum.repos.d/arkcase.repo
 
 
 #
