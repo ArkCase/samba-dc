@@ -1,0 +1,116 @@
+version: "3.9"
+
+services:
+    dc-01:
+        image: ark_samba:latest
+        container_name: dc-01
+        hostname: dc-01
+        domainname: testdomain.priv
+        dns:
+            - "192.168.2.32"
+            - "192.168.3.253"
+        extra_hosts:
+            - "dc-01.testdomain.priv:192.168.2.32"
+        dns_search:
+            - testdomain.priv
+#        networks:
+#            - samba
+        volumes:
+            - /etc/localtime:/etc/localtime:ro
+            - ./data/smb/01:/var/lib/samba
+            - ./conf/smb/01:/config
+            - ./conf/vpn/01:/vpn
+            - ./logs/smb/01:/var/log/samba
+        environment:
+            DOMAIN: "testdomain.priv"
+            DOMAINPASS: "RaL@a5eio:heC3"
+            HOSTIP: "192.168.2.32"
+            JOIN: "false"
+            #JOINSITE: ""
+            DNSFORWARDER: "192.168.3.253"
+            #INSECURELDAP: "false"
+            #MULTISITE: "false"
+            NOCOMPLEXITY: "true"
+        ports:
+            - "192.168.2.32:53:53/tcp"
+            - "192.168.2.32:53:53/udp"
+            - "192.168.2.32:88:88/tcp"
+            - "192.168.2.32:88:88/udp"
+            - "192.168.2.32:135:135/tcp"
+            - "192.168.2.32:137-138:137-138/udp"
+            - "192.168.2.32:139:139/tcp"
+            - "192.168.2.32:389:389/tcp"
+            - "192.168.2.32:389:389/udp"
+            - "192.168.2.32:445:445/tcp"
+            - "192.168.2.32:464:464/tcp"
+            - "192.168.2.32:464:464/udp"
+            - "192.168.2.32:636:636/tcp"
+            - "192.168.2.32:3268-3269:3268-3269/tcp"
+            - "192.168.2.32:49152-49154:49152-49154/tcp"
+        privileged: true
+        restart: unless-stopped
+
+#    dc-02:
+#        image: ark_samba:latest
+#        container_name: dc-02
+#        hostname: dc-02
+#        domainname: testdomain.priv
+#        dns:
+#            - "192.168.2.33"
+#            - "192.168.2.32"
+#            - "192.168.3.253"
+#        extra_hosts:
+#            - "dc-01.testdomain.priv:192.168.2.32"
+#            - "dc-02.testdomain.priv:192.168.2.33"
+#        dns_search:
+#            - testdomain.priv
+##        networks:
+##            - samba
+#        volumes:
+#            - /etc/localtime:/etc/localtime:ro
+#            - ./data/smb/02:/var/lib/samba
+#            - ./conf/smb/02:/etc/samba/external
+#            - ./conf/vpn/02:/vpn
+#            - ./logs/smb/02:/var/log/samba
+#        environment:
+#            DOMAIN: "testdomain.priv"
+#            DOMAINPASS: "RaL@a5eio:heC3"
+#            HOSTIP: "192.168.2.33"
+#            JOIN: "true"
+#            #JOINSITE: "testdomain.priv"
+#            DNSFORWARDER: "192.168.3.253"
+#            #INSECURELDAP: "false"
+#            #MULTISITE: "false"
+#            NOCOMPLEXITY: "true"
+#        ports:
+#            - "192.168.2.33:53:53/tcp"
+#            - "192.168.2.33:53:53/udp"
+#            - "192.168.2.33:88:88/tcp"
+#            - "192.168.2.33:88:88/udp"
+#            - "192.168.2.33:135:135/tcp"
+#            - "192.168.2.33:137-138:137-138/udp"
+#            - "192.168.2.33:139:139/tcp"
+#            - "192.168.2.33:389:389/tcp"
+#            - "192.168.2.33:389:389/udp"
+#            - "192.168.2.33:445:445/tcp"
+#            - "192.168.2.33:464:464/tcp"
+#            - "192.168.2.33:464:464/udp"
+#            - "192.168.2.33:636:636/tcp"
+#            - "192.168.2.33:3268-3269:3268-3269/tcp"
+#            - "192.168.2.33:49152-49154:49152-49154/tcp"
+#        privileged: true
+#        restart: unless-stopped
+
+#
+# TODO: Try to dynamically create the necessary IPs?
+#
+#networks:
+#    samba:
+#        ipam:
+#            driver: macvlan
+#            config:
+#                - subnet: "192.168.16.0/24"
+#                #- gateway: "192.168.2.32"
+#        driver_opts:
+#            ipvlan_mode: "l2"
+#            parent: "enp8s0"
