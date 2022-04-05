@@ -320,7 +320,7 @@ configure_k8s() {
 }
 
 # In case we're in Kubernetes
-configure_k8s
+configure_k8s || echo "Kubernetes configurations not available"
 
 #
 # Configure the components
