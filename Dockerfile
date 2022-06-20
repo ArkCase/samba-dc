@@ -75,6 +75,10 @@ RUN yum -y install \
 		bind \
 		krb5-server \
 		ldb-tools \
+		liburing-devel \
+		mingw32-gcc \
+		mingw64-gcc \
+		python3-cryptography \
 		python3-iso8601 \
 		python3-markdown \
 		python3-pyasn1 \
