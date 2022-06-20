@@ -3,15 +3,15 @@
 #
 ARG ARCH="x86_64"
 ARG OS="linux"
-ARG VER="4.14.5-9"
-ARG DIST="el8_5"
+ARG VER="4.15.5-5"
+ARG DIST="el8"
 ARG PKG="samba"
-ARG LDB_VER="2.3.0-2"
+ARG LDB_VER="2.4.1-1"
 
 #
 # To build the RPMs
 #
-FROM rockylinux:8.5 as src
+FROM rockylinux:8 as src
 
 #
 # Basic Parameters
@@ -87,7 +87,7 @@ RUN createrepo RPMS
 #
 # For actual execution
 #
-FROM rockylinux:8.5
+FROM rockylinux:8
 
 #
 # Basic Parameters
