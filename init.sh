@@ -295,6 +295,23 @@ configure_smb() {
 			\\\tldap server require strong auth = no\
 			" "${SMB_CONF}"
 	fi
+
+	# TODO: If we're using specific certificates vs. our own created ones, we must
+	# add these settings to smb.conf, pointing to the correct certificate and CA (if necessary)
+	# ... we must remove/replace existing settings if necessary, or append them to the [global]
+	# section:
+	#
+	# tls enabled  = yes
+	# tls keyfile  = <certificate-key-file>
+	# tls certfile = <certificate-file>
+	# tls cafile   = <ca-file>
+	#
+	# We check to see if we have specific certificates by checking specific locations that the
+	# necessary secrets would be mounted on, and using those files. Once this is done, it can never
+	# be undone, and the certificates will have to be updated via updates to the secrets, and
+	# the container re-started for them to take effect
+	#
+
 	# Once we are set up, we'll make a file so that we know to use it if we ever spin this up again
 	backup_file "${EXT_SMB_CONF}"
 	cp -f "${SMB_CONF}" "${EXT_SMB_CONF}"
