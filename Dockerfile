@@ -1,4 +1,14 @@
 #
+# Basic Parameters
+#
+ARG ARCH="x86_64"
+ARG OS="linux"
+ARG VER="4.14.5-9"
+ARG DIST="el8_5"
+ARG PKG="samba"
+ARG LDB_VER="2.3.0-2"
+
+#
 # To build the RPMs
 #
 FROM rockylinux:8.5 as src
@@ -6,13 +16,13 @@ FROM rockylinux:8.5 as src
 #
 # Basic Parameters
 #
-ARG ARCH="x86_64"
-ARG OS="linux"
-ARG VER="4.14.5-9"
-ARG DIST="el8_5"
-ARG LDB_VER="2.3.0-2"
+ARG ARCH
+ARG OS
+ARG VER
+ARG DIST
+ARG PKG
+ARG LDB_VER
 ARG LDB_DIST="el8"
-ARG PKG="samba"
 ARG SRC="https://dl.rockylinux.org/pub/rocky/8/BaseOS/source/tree/Packages/s/samba-${VER}.${DIST}.src.rpm"
 
 #
@@ -82,12 +92,12 @@ FROM rockylinux:8.5
 #
 # Basic Parameters
 #
-ARG ARCH="x86_64"
-ARG OS="linux"
-ARG VER="4.14.5-9"
-ARG DIST="el8_5"
-ARG LDB_VER="2.3.0-2"
-ARG PKG="samba"
+ARG ARCH
+ARG OS
+ARG VER
+ARG DIST
+ARG PKG
+ARG LDB_VER
 
 #
 # Some important labels
