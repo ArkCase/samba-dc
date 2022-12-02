@@ -1,19 +1,28 @@
 #
-# To build the RPMs
-#
-FROM rockylinux:8.5 as src
-
-#
 # Basic Parameters
 #
 ARG ARCH="x86_64"
 ARG OS="linux"
-ARG VER="4.14.5-9"
-ARG DIST="el8_5"
-ARG LDB_VER="2.3.0-2"
-ARG LDB_DIST="el8"
+ARG VER="4.15.5-10"
+ARG DIST="el8_6"
 ARG PKG="samba"
-ARG SRC="https://dl.rockylinux.org/pub/rocky/8/BaseOS/source/tree/Packages/s/samba-${VER}.${DIST}.src.rpm"
+
+#
+# To build the RPMs
+#
+FROM rockylinux:8.6 as src
+
+#
+# Basic Parameters
+#
+ARG ARCH
+ARG OS
+ARG VER
+ARG DIST
+ARG PKG
+# ARG ROCKY_REPO="https://dl.rockylinux.org/pub/rocky/8/BaseOS/source/tree/Packages"
+ARG ROCKY_REPO="https://dl.rockylinux.org/vault/rocky/8.6/BaseOS/source/tree/Packages"
+ARG SRC="${ROCKY_REPO}/s/samba-${VER}.${DIST}.src.rpm"
 
 #
 # Some important labels
@@ -38,16 +47,28 @@ RUN yum-config-manager \
 		--enable powertools
 
 #
+# Download the SRPMs
+#
+WORKDIR /root/rpmbuild
+COPY find-latest-srpm .
+RUN wget --recursive --level 2 --no-parent --no-directories "${ROCKY_REPO}" --directory-prefix=. --accept "samba-*.src.rpm" --accept "libldb-*.src.rpm"
+
+#
+# This will have downloaded all available libldb and samba source RPMs, so now we endeavor to discover the versions at play
+#
+
+#
 # Build the one missing build dependency - python3-ldb-devel
 #
-RUN curl -O "https://dl.rockylinux.org/pub/rocky/8/BaseOS/source/tree/Packages/l/libldb-${LDB_VER}.${LDB_DIST}.src.rpm"
-RUN yum-builddep -y "libldb-${LDB_VER}.${LDB_DIST}.src.rpm"
-RUN rpmbuild --clean --rebuild "libldb-${LDB_VER}.${LDB_DIST}.src.rpm"
+RUN LIBLDB_SRPM="$( \
+	find . -type f -name 'libldb-*.src.rpm' | \
+	)"
+RUN yum-builddep -y "${LIBLDB_SRPM}"
+RUN rpmbuild --clean --rebuild "${LIBLDB_SRPM}"
 
 #
 # Create a repository that facilitates installation later
 #
-WORKDIR /root/rpmbuild
 RUN yum -y install createrepo
 RUN createrepo RPMS
 COPY arkcase.repo /etc/yum.repos.d
@@ -58,7 +79,6 @@ RUN yum -y install python3-ldb python3-ldb-devel
 #
 # Build Samba now
 #
-WORKDIR /root/rpmbuild
 RUN curl -O "${SRC}"
 RUN yum-builddep -y "samba-${VER}.${DIST}.src.rpm"
 RUN yum -y install \
@@ -77,17 +97,16 @@ RUN createrepo RPMS
 #
 # For actual execution
 #
-FROM rockylinux:8.5
+FROM rockylinux:8.6
 
 #
 # Basic Parameters
 #
-ARG ARCH="x86_64"
-ARG OS="linux"
-ARG VER="4.14.5-9"
-ARG DIST="el8_5"
-ARG LDB_VER="2.3.0-2"
-ARG PKG="samba"
+ARG ARCH
+ARG OS
+ARG VER
+ARG DIST
+ARG PKG
 
 #
 # Some important labels
