@@ -4,7 +4,6 @@
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG VER="4.15.5-10"
-ARG DIST="el8_6"
 ARG PKG="samba"
 ARG ROCKY_VERSION="8.6"
 
@@ -19,8 +18,8 @@ FROM rockylinux:${ROCKY_VERSION} as src
 ARG ARCH
 ARG OS
 ARG VER
-ARG DIST
 ARG PKG
+ARG ROCKY_VERSION
 
 #
 # Some important labels
@@ -57,6 +56,7 @@ ENV REPO="https://dl.rockylinux.org/vault/rocky/${ROCKY_VERSION}/BaseOS/source/t
 RUN wget --recursive --level 2 --no-parent --no-directories "${REPO}" --directory-prefix=. --accept "samba-*.src.rpm" --accept "libldb-*.src.rpm" || true
 ENV REPO=""
 COPY find-latest-srpm .
+COPY get-dist .
 
 #
 # We have the RPMs available, now find the latest ones and build them
@@ -96,6 +96,8 @@ RUN SAMBA_SRPM="$( ./find-latest-srpm samba-*.src.rpm )" && \
 		python3-pyasn1 \
 		python3-setproctitle \
 		tdb-tools && \
+    DIST="$( ./get-dist "${SAMBA_SRPM}" )" && \
+    if [ -z "${DIST}" ] ; then echo "Failed to identify the distribution for the SRPM [${SAMBA_SRPM}]" ; exit 1 ; fi && \
     rpmbuild --clean --define "dist .${DIST}" --define "${DIST} 1" --with dc --rebuild "${SAMBA_SRPM}"
 RUN rm -rf RPMS/repodata
 RUN createrepo RPMS
@@ -118,7 +120,6 @@ FROM rockylinux:${ROCKY_VERSION}
 ARG ARCH
 ARG OS
 ARG VER
-ARG DIST
 ARG PKG
 
 #
