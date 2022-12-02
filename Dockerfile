@@ -6,11 +6,12 @@ ARG OS="linux"
 ARG VER="4.15.5-10"
 ARG DIST="el8_6"
 ARG PKG="samba"
+ARG ROCKY_VERSION="8.6"
 
 #
 # To build the RPMs
 #
-FROM rockylinux:8.6 as src
+FROM rockylinux:${ROCKY_VERSION} as src
 
 #
 # Basic Parameters
@@ -20,9 +21,6 @@ ARG OS
 ARG VER
 ARG DIST
 ARG PKG
-# ARG ROCKY_REPO="https://dl.rockylinux.org/pub/rocky/8/BaseOS/source/tree/Packages"
-ARG ROCKY_REPO="https://dl.rockylinux.org/vault/rocky/8.6/BaseOS/source/tree/Packages"
-ARG SRC="${ROCKY_REPO}/s/samba-${VER}.${DIST}.src.rpm"
 
 #
 # Some important labels
@@ -47,24 +45,30 @@ RUN yum-config-manager \
 		--enable powertools
 
 #
-# Download the SRPMs
+# Download the requisite SRPMs
 #
 WORKDIR /root/rpmbuild
+RUN yum -y install wget
+# First try the main repository
+ENV REPO="https://dl.rockylinux.org/pub/rocky/${ROCKY_VERSION}/BaseOS/source/tree/Packages"
+RUN wget --recursive --level 2 --no-parent --no-directories "${REPO}" --directory-prefix=. --accept "samba-*.src.rpm" --accept "libldb-*.src.rpm" || true
+# Now try the vault repository
+ENV REPO="https://dl.rockylinux.org/vault/rocky/${ROCKY_VERSION}/BaseOS/source/tree/Packages"
+RUN wget --recursive --level 2 --no-parent --no-directories "${REPO}" --directory-prefix=. --accept "samba-*.src.rpm" --accept "libldb-*.src.rpm" || true
+ENV REPO=""
 COPY find-latest-srpm .
-RUN wget --recursive --level 2 --no-parent --no-directories "${ROCKY_REPO}" --directory-prefix=. --accept "samba-*.src.rpm" --accept "libldb-*.src.rpm"
 
 #
-# This will have downloaded all available libldb and samba source RPMs, so now we endeavor to discover the versions at play
+# We have the RPMs available, now find the latest ones and build them
 #
 
 #
 # Build the one missing build dependency - python3-ldb-devel
 #
-RUN LIBLDB_SRPM="$( \
-	find . -type f -name 'libldb-*.src.rpm' | \
-	)"
-RUN yum-builddep -y "${LIBLDB_SRPM}"
-RUN rpmbuild --clean --rebuild "${LIBLDB_SRPM}"
+RUN LIBLDB_SRPM="$( ./find-latest-srpm libldb-*.src.rpm )" && \
+    if [ -z "${LIBLDB_SRPM}" ] ; then echo "No libldb SRPM was found" ; exit 1 ; fi && \
+    yum-builddep -y "${LIBLDB_SRPM}" && \
+    rpmbuild --clean --rebuild "${LIBLDB_SRPM}"
 
 #
 # Create a repository that facilitates installation later
@@ -79,25 +83,34 @@ RUN yum -y install python3-ldb python3-ldb-devel
 #
 # Build Samba now
 #
-RUN curl -O "${SRC}"
-RUN yum-builddep -y "samba-${VER}.${DIST}.src.rpm"
-RUN yum -y install \
+RUN SAMBA_SRPM="$( ./find-latest-srpm samba-*.src.rpm )" && \
+    if [ -z "${SAMBA_SRPM}" ] ; then echo "No Samba SRPM was found" ; exit 1 ; fi && \
+    yum-builddep -y "${SAMBA_SRPM}" && \
+    yum -y install \
 		bind \
 		krb5-server \
 		ldb-tools \
+		python3-cryptography \
 		python3-iso8601 \
 		python3-markdown \
 		python3-pyasn1 \
 		python3-setproctitle \
-		tdb-tools
-RUN rpmbuild --clean --define "dist .${DIST}" --define "${DIST} 1" --with dc --rebuild "samba-${VER}.${DIST}.src.rpm"
+		tdb-tools && \
+    rpmbuild --clean --define "dist .${DIST}" --define "${DIST} 1" --with dc --rebuild "${SAMBA_SRPM}"
 RUN rm -rf RPMS/repodata
 RUN createrepo RPMS
+RUN find RPMS && exit 1
+
+#
+# Deploy the artifacts
+#
+
+# RUN curl -v --user "${NEXUS_AUTH}" --upload-file ./test.rpm "${NEXUS_URL}/repository/${NEXUS_REPO}/..."
 
 #
 # For actual execution
 #
-FROM rockylinux:8.6
+FROM rockylinux:${ROCKY_VERSION}
 
 #
 # Basic Parameters
