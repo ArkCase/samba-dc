@@ -3,9 +3,9 @@
 #
 ARG ARCH="x86_64"
 ARG OS="linux"
-ARG VER="4.15.5-10"
+ARG VER="4.14.5-10"
 ARG PKG="samba"
-ARG ROCKY_VERSION="8.6"
+ARG ROCKY_VERSION="8.5"
 
 #
 # To build the RPMs
@@ -101,7 +101,6 @@ RUN SAMBA_SRPM="$( ./find-latest-srpm samba-*.src.rpm )" && \
     rpmbuild --clean --define "dist .${DIST}" --define "${DIST} 1" --with dc --rebuild "${SAMBA_SRPM}"
 RUN rm -rf RPMS/repodata
 RUN createrepo RPMS
-RUN find RPMS && exit 1
 
 #
 # Deploy the artifacts
