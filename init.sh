@@ -1,6 +1,15 @@
 #!/bin/bash
 
-set -e -o pipefail
+set -euo pipefail
+
+say() {
+	echo -e "${@}"
+}
+
+fail() {
+	say "${@}" 1>&2
+	exit ${EXIT_CODE:-1}
+}
 
 DEBUG="false"
 case "${DEBUG,,}" in
@@ -83,7 +92,7 @@ ini_get_value() {
 }
 
 reset_data() {
-	echo "Cleaning up any vestigial configurations"
+	say "Cleaning up any vestigial configurations"
 	rm -rf /var/lib/samba/* /var/log/samba/*
 	tar -C / -xzf /samba-directory-templates.tar.gz
 }
@@ -174,7 +183,7 @@ is_initialized() {
 	#
 	# We're fully configured, so we don't have to redo it
 	#
-	echo "Domain data is already configured"
+	say "Domain data is already configured"
 	return 0
 }
 
@@ -183,9 +192,9 @@ cfg_mismatch() {
 	local R1="${2}"
 	local R2="${3}"
 
-	echo "The existing configurations are for the ${L} [${R1}]"
-	echo "This container instance has been configured for the ${L} [${R2}]"
-	echo "This mismatch is unresolvable - please manually clean out the existing data files and logs, or fix the configuration file"
+	say "The existing configurations are for the ${L} [${R1}]"
+	say "This container instance has been configured for the ${L} [${R2}]"
+	say "This mismatch is unresolvable - please manually clean out the existing data files and logs, or fix the configuration file"
 }
 
 check_krb_conf() {
@@ -240,7 +249,7 @@ configure_smb() {
 
 	is_initialized && return 0
 
-	echo "Configuring the domain"
+	say "Configuring the domain"
 
 	# Should we do this?
 	reset_data
@@ -250,7 +259,7 @@ configure_smb() {
 		/usr/sbin/openvpn --config /docker.ovpn &
 		VPNPID="${!}"
 		# TODO: Find a more efficient way to do this?
-		echo "Sleeping 30s to ensure VPN connects (${VPNPID})";
+		say "Sleeping 30s to ensure VPN connects (${VPNPID})";
 		sleep 30
 	fi
 
@@ -298,7 +307,22 @@ configure_smb() {
 	# Once we are set up, we'll make a file so that we know to use it if we ever spin this up again
 	backup_file "${EXT_SMB_CONF}"
 	cp -f "${SMB_CONF}" "${EXT_SMB_CONF}"
-	return 0
+
+	# Apply extra initializations, if needed
+	local INIT_DIR="/app/init"
+	if [ -d "${INIT_DIR}" ] ; then
+		say "Launching extra initializations from [${INIT_DIR}]..."
+		while read script ; do
+			say "\tLaunching the extra initializer script [${script}]..."
+			(
+				cd "${INIT_DIR}" || exit 1
+				"${script}" || fail "\tError executing the initializer script [${script}] (rc=${?})"
+			) || return ${?}
+		done < <(find . -mindepth 1 -maxdepth 1 -type f -perm /u+x)
+	fi
+
+	say "Initialization complete"
+	return ${?}
 }
 
 configure_k8s() {
@@ -313,20 +337,22 @@ configure_k8s() {
 	[ -n "${DNSFORWARDER}" ] && return 0
 
 	# Lookup the DNS name kube-dns.kube-system.svc.cluster.local
-	local K8S_DNS="$(dig +short "kube-dns.kube-system.svc.cluster.local")"
+	# TODO: Handle cases when the cluster domain is something else
+	local CLUSTER_DOMAIN="cluster.local"
+	local K8S_DNS="$(dig +short "kube-dns.kube-system.svc.${CLUSTER_DOMAIN}")"
 	[ -n "${K8S_DNS}" ] || return 1
-	
+
 	DNSFORWARDER="${K8S_DNS}"
 }
 
 # In case we're in Kubernetes
-configure_k8s || echo "Kubernetes configurations not available"
+configure_k8s || say "Kubernetes configurations not available"
 
 #
 # Configure the components
 #
 configure_krb
-configure_smb
+configure_smb || fail "Failed to configure Samba"
 
 #
 # Set up supervisor
