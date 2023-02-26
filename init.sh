@@ -318,7 +318,7 @@ configure_smb() {
 				cd "${INIT_DIR}" || exit 1
 				"${script}" || fail "\tError executing the initializer script [${script}] (rc=${?})"
 			) || return ${?}
-		done < <(find . -mindepth 1 -maxdepth 1 -type f -perm /u+x)
+		done < <(find . -mindepth 1 -maxdepth 1 -type f -perm /u+x | sort | sed -e 's;^./;;g')
 	fi
 
 	say "Initialization complete"
