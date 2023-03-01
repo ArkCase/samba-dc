@@ -66,7 +66,10 @@ RUN yum -y install \
 		sssd-krb5 \
 		supervisor \
 		telnet \
-		which
+		which \
+    && \
+    yum -y clean all && \
+    update-alternatives --set python /usr/bin/python3
 RUN rm -rf /rpm /etc/yum.repos.d/arkcase.repo
 
 
