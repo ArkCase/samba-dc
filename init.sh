@@ -315,7 +315,10 @@ configure_smb() {
 		cd "${INIT_DIR}" || exit 1
 		while read script ; do
 			say "\tLaunching the extra initializer script [${script}]..."
-			"$(readlink -f "${script}")" || fail "\tError executing the initializer script [${script}] (rc=${?})"
+			if ! "$(readlink -f "${script}")" ; then
+				say "\tError executing the initializer script [${script}] (rc=${?})"
+				return 1
+			fi
 		done < <(find . -mindepth 1 -maxdepth 1 -type f -perm /u+x | sort | sed -e 's;^./;;g')
 	fi
 
@@ -350,7 +353,10 @@ configure_k8s || say "Kubernetes configurations not available"
 # Configure the components
 #
 configure_krb
-configure_smb || fail "Failed to configure Samba"
+if ! configure_smb ; then
+	reset_data
+	fail "Failed to configure Samba"
+fi
 
 #
 # Set up supervisor
