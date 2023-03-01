@@ -312,12 +312,10 @@ configure_smb() {
 	local INIT_DIR="/app/init"
 	if [ -d "${INIT_DIR}" ] ; then
 		say "Launching extra initializations from [${INIT_DIR}]..."
+		cd "${INIT_DIR}" || exit 1
 		while read script ; do
 			say "\tLaunching the extra initializer script [${script}]..."
-			(
-				cd "${INIT_DIR}" || exit 1
-				"${script}" || fail "\tError executing the initializer script [${script}] (rc=${?})"
-			) || return ${?}
+			"${script}" || fail "\tError executing the initializer script [${script}] (rc=${?})"
 		done < <(find . -mindepth 1 -maxdepth 1 -type f -perm /u+x | sort | sed -e 's;^./;;g')
 	fi
 
