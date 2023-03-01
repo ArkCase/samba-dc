@@ -315,7 +315,7 @@ configure_smb() {
 		cd "${INIT_DIR}" || exit 1
 		while read script ; do
 			say "\tLaunching the extra initializer script [${script}]..."
-			"${script}" || fail "\tError executing the initializer script [${script}] (rc=${?})"
+			"$(readlink -f "${script}")" || fail "\tError executing the initializer script [${script}] (rc=${?})"
 		done < <(find . -mindepth 1 -maxdepth 1 -type f -perm /u+x | sort | sed -e 's;^./;;g')
 	fi
 
