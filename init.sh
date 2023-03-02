@@ -18,7 +18,10 @@ esac
 
 ${DEBUG} && set -x
 
-CONF_DIR="/config"
+[ -v BASE_DIR ] || BASE_DIR="/app"
+[ -v INIT_DIR ] || INIT_DIR="${BASE_DIR}/init"
+[ -v CONF_DIR ] || CONF_DIR="${BASE_DIR}/conf"
+
 SUPERVISOR_SMB_CONF="/etc/supervisord.d/samba-dc.ini"
 SUPERVISOR_VPN_CONF="/etc/supervisord.d/samba-vpn.ini"
 SMB_CONF="/etc/samba/smb.conf"
@@ -309,10 +312,10 @@ configure_smb() {
 	cp -f "${SMB_CONF}" "${EXT_SMB_CONF}"
 
 	# Apply extra initializations, if needed
-	local INIT_DIR="/app/init"
-	if [ -d "${INIT_DIR}" ] ; then
-		say "Launching extra initializations from [${INIT_DIR}]..."
-		cd "${INIT_DIR}" || exit 1
+	local INIT_SCRIPTS="${INIT_DIR}/init.d"
+	if [ -d "${INIT_SCRIPTS}" ] ; then
+		say "Launching extra initializations from [${INIT_SCRIPTS}]..."
+		cd "${INIT_SCRIPTS}" || exit 1
 		while read script ; do
 			say "\tLaunching the extra initializer script [${script}]..."
 			if ! "$(readlink -f "${script}")" ; then
@@ -378,4 +381,60 @@ if [ "${MULTISITE,,}" = "true" ] ; then
 else
 	rm -f "${SUPERVISOR_VPN_CONF}" &>/dev/null
 fi
+
+#
+# Deploy the new certificates
+#
+[ -v LDAP_SSL_BASE ] || LDAP_SSL_BASE="${INIT_DIR}/ssl"
+[ -v LDAP_SSL_CA ] || LDAP_SSL_CA="${LDAP_SSL_BASE}/ca.pem"
+[ -v LDAP_SSL_CERT ] || LDAP_SSL_CERT="${LDAP_SSL_BASE}/cert.pem"
+[ -v LDAP_SSL_KEY ] || LDAP_SSL_KEY="${LDAP_SSL_BASE}/key.pem"
+
+LOCAL_CERT_HOME="/var/lib/samba/private/tls"
+
+DEPLOY_CERTS="false"
+if [ -d "${LDAP_SSL_BASE}" ] ; then
+	# If there's a certificate, make sure there's also a key
+	if [ -f "${LDAP_SSL_CERT}" ] && [ -f "${LDAP_SSL_KEY}" ] ; then
+		say "New certificates identified - validating them for use"
+		# If there's both a certificate and a key, make sure they match
+		CERT_MOD="$(openssl x509 -noout -modulus -inform pem -in "${LDAP_SSL_CERT}")"
+		[ -n "${CERT_MOD}" ] && CERT_MD5="$(openssl md5 < <(echo -n "${CERT_MOD}"))"
+
+		KEY_MOD="$(openssl rsa -noout -modulus -passin /dev/null -inform pem -in "${LDAP_SSL_KEY}")"
+		[ -n "${KEY_MOD}" ] && KEY_MD5="$(openssl md5 < <(echo -n "${KEY_MOD}"))"
+
+		# If the MD5s have been computed, it's b/c the cert and key are there for that to happen
+		if [ -v KEY_MD5 ] && [ -v CERT_MD5 ] && [ "${KEY_MD5}" == "${CERT_MD5}" ] ; then
+			# Disable deployment if we were given a CA that doesn't match the given certificate
+			TEST_CA="${LDAP_SSL_CA}"
+			[ -f "${TEST_CA}" ] || TEST_CA="${LOCAL_CERT_HOME}/ca.pem"
+
+			if [ -f "${TEST_CA}" ] && ! openssl verify -CAfile "${TEST_CA}" "${LDAP_SSL_CERT}" &>/dev/null ; then
+				say "Certification Authority check failed for the new certificates (CA=${TEST_CA})- will not deploy them"
+				DEPLOY_CERTS="false"
+			else
+				# Everything matched, and either the CA test succeeded, or there was no CA to check against
+				DEPLOY_CERTS="true"
+			fi
+		else
+			say "Modulus check failed for the new certificates - will not deploy them"
+		fi
+	fi
+fi
+
+# If all these checks succeed, deploy the new certificates, removing existing files
+if ${DEPLOY_CERTS} ; then
+	say "New certificates were verified"
+	say "Removing the old certificates from [${LOCAL_CERT_HOME}]"
+	rm -f "${LOCAL_CERT_HOME}"/* &>/dev/null
+	say "Deploying the new certificates to [${LOCAL_CERT_HOME}]"
+	cp -vf "${LDAP_SSL_CERT}" "${LOCAL_CERT_HOME}/cert.pem"
+	cp -vf "${LDAP_SSL_KEY}" "${LOCAL_CERT_HOME}/key.pem"
+
+	# This is the only piece of the puzzle that's optional
+	[ -n "${LDAP_SSL_CA}" ] && cp -vf "${LDAP_SSL_CA}" "${LOCAL_CERT_HOME}/ca.pem"
+fi
+
+say "Launching Samba (via supervisord)"
 exec /usr/bin/supervisord -n
