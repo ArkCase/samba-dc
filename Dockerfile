@@ -86,12 +86,16 @@ VOLUME /vpn
 VOLUME /var/log/samba
 VOLUME /var/lib/samba
 
+EXPOSE 80
+EXPOSE 636
+
 #
 # Set up script and run
 #
 ADD init.sh /init.sh
+ADD export-cafile /usr/local/bin/export-cafile
 ADD test-ready.sh /test-ready.sh
 ADD test-live.sh /test-live.sh
 COPY samba-directory-templates.tar.gz /
-RUN chmod 755 /init.sh
+RUN chmod 755 /init.sh /usr/local/bin/export-cafile
 ENTRYPOINT /init.sh

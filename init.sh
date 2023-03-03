@@ -24,10 +24,14 @@ ${DEBUG} && set -x
 
 SUPERVISOR_SMB_CONF="/etc/supervisord.d/samba-dc.ini"
 SUPERVISOR_VPN_CONF="/etc/supervisord.d/samba-vpn.ini"
+SUPERVISOR_CAFILE_CONF="/etc/supervisord.d/samba-cafile.ini"
 SMB_CONF="/etc/samba/smb.conf"
 EXT_SMB_CONF="${CONF_DIR}/smb.conf"
 KRB_CONF="/etc/krb5.conf"
 EXT_KRB_CONF="${CONF_DIR}/krb5.conf"
+
+[ -v SAMBA_STATE ] || SAMBA_STATE="/var/lib/samba"
+SAMBA_PRIVATE="${SAMBA_STATE}/private"
 
 #
 # Set and normalize variables
@@ -96,7 +100,7 @@ ini_get_value() {
 
 reset_data() {
 	say "Cleaning up any vestigial configurations"
-	rm -rf /var/lib/samba/* /var/log/samba/*
+	rm -rf "${SAMBA_STATE}"/* /var/log/samba/*
 	tar -C / -xzf /samba-directory-templates.tar.gz
 }
 
@@ -159,9 +163,8 @@ is_initialized() {
 	#
 	# Check for the created databases
 	#
-	local PFX="/var/lib/samba"
 	for C in "${CANDIDATES[@]}" ; do
-		C="${PFX}/${C}"
+		C="${SAMBA_STATE}/${C}"
 		[ -e "${C}" ] || return 1
 		[ -f "${C}" ] || return 1
 		[ -r "${C}" ] || return 1
@@ -170,7 +173,7 @@ is_initialized() {
 	#
 	# Domain Policies
 	#
-	local POLICY_DIR="${PFX}/sysvol/${DOMAIN,,}/Policies"
+	local POLICY_DIR="${SAMBA_STATE}/sysvol/${DOMAIN,,}/Policies"
 	[ -e "${POLICY_DIR}" ] || return 1
 	[ -d "${POLICY_DIR}" ] || return 1
 	[ -r "${POLICY_DIR}" ] || return 1
@@ -369,14 +372,19 @@ fi
 #
 cat <<-EOF > "${SUPERVISOR_SMB_CONF}"
 [program:samba]
-command=/usr/sbin/samba -i
+command = /usr/sbin/samba -i
+EOF
+
+cat <<-EOF > "${SUPERVISOR_CAFILE_CONF}"
+[program:samba-cafile]
+command = /usr/local/bin/export-cafile
 EOF
 
 if [ "${MULTISITE,,}" = "true" ] ; then
 	[ -n "${VPNPID}" ] kill "${VPNPID}"
 	cat <<-EOF > "${SUPERVISOR_VPN_CONF}"
 	[program:openvpn]
-	command=/usr/sbin/openvpn --config /docker.ovpn
+	command = /usr/sbin/openvpn --config /docker.ovpn
 	EOF
 else
 	rm -f "${SUPERVISOR_VPN_CONF}" &>/dev/null
@@ -390,7 +398,7 @@ fi
 [ -v LDAP_SSL_CERT ] || LDAP_SSL_CERT="${LDAP_SSL_BASE}/cert.pem"
 [ -v LDAP_SSL_KEY ] || LDAP_SSL_KEY="${LDAP_SSL_BASE}/key.pem"
 
-LOCAL_CERT_HOME="/var/lib/samba/private/tls"
+LOCAL_CERT_HOME="${SAMBA_PRIVATE}/tls"
 
 DEPLOY_CERTS="false"
 if [ -d "${LDAP_SSL_BASE}" ] ; then
