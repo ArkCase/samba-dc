@@ -93,7 +93,6 @@ EXPOSE 636
 # Set up script and run
 #
 ADD init.sh /init.sh
-ADD export-cafile /usr/local/bin/export-cafile
 ADD test-ready.sh /test-ready.sh
 ADD test-live.sh /test-live.sh
 COPY samba-directory-templates.tar.gz /

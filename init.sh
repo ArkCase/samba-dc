@@ -24,7 +24,6 @@ ${DEBUG} && set -x
 
 SUPERVISOR_SMB_CONF="/etc/supervisord.d/samba-dc.ini"
 SUPERVISOR_VPN_CONF="/etc/supervisord.d/samba-vpn.ini"
-SUPERVISOR_CAFILE_CONF="/etc/supervisord.d/samba-cafile.ini"
 SMB_CONF="/etc/samba/smb.conf"
 EXT_SMB_CONF="${CONF_DIR}/smb.conf"
 KRB_CONF="/etc/krb5.conf"
@@ -373,11 +372,6 @@ fi
 cat <<-EOF > "${SUPERVISOR_SMB_CONF}"
 [program:samba]
 command = /usr/sbin/samba -i
-EOF
-
-cat <<-EOF > "${SUPERVISOR_CAFILE_CONF}"
-[program:samba-cafile]
-command = /usr/local/bin/export-cafile
 EOF
 
 if [ "${MULTISITE,,}" = "true" ] ; then
