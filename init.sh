@@ -384,58 +384,82 @@ else
 	rm -f "${SUPERVISOR_VPN_CONF}" &>/dev/null
 fi
 
-#
-# Deploy the new certificates
-#
-[ -v LDAP_SSL_BASE ] || LDAP_SSL_BASE="${INIT_DIR}/ssl"
-[ -v LDAP_SSL_CA ] || LDAP_SSL_CA="${LDAP_SSL_BASE}/ca.pem"
-[ -v LDAP_SSL_CERT ] || LDAP_SSL_CERT="${LDAP_SSL_BASE}/cert.pem"
-[ -v LDAP_SSL_KEY ] || LDAP_SSL_KEY="${LDAP_SSL_BASE}/key.pem"
-
 LOCAL_CERT_HOME="${SAMBA_PRIVATE}/tls"
 
-DEPLOY_CERTS="false"
-if [ -d "${LDAP_SSL_BASE}" ] ; then
-	# If there's a certificate, make sure there's also a key
-	if [ -f "${LDAP_SSL_CERT}" ] && [ -f "${LDAP_SSL_KEY}" ] ; then
-		say "New certificates identified - validating them for use"
-		# If there's both a certificate and a key, make sure they match
-		CERT_MOD="$(openssl x509 -noout -modulus -inform pem -in "${LDAP_SSL_CERT}")"
-		[ -n "${CERT_MOD}" ] && CERT_MD5="$(openssl md5 < <(echo -n "${CERT_MOD}"))"
+#
+# Download the new certificates from the step-ca instance
+#
 
-		KEY_MOD="$(openssl rsa -noout -modulus -passin /dev/null -inform pem -in "${LDAP_SSL_KEY}")"
-		[ -n "${KEY_MOD}" ] && KEY_MD5="$(openssl md5 < <(echo -n "${KEY_MOD}"))"
+if [ -v STEP_URL ] && [ -v STEP_PASSWORD_FILE ] ; then
 
-		# If the MD5s have been computed, it's b/c the cert and key are there for that to happen
-		if [ -v KEY_MD5 ] && [ -v CERT_MD5 ] && [ "${KEY_MD5}" == "${CERT_MD5}" ] ; then
-			# Disable deployment if we were given a CA that doesn't match the given certificate
-			TEST_CA="${LDAP_SSL_CA}"
-			[ -f "${TEST_CA}" ] || TEST_CA="${LOCAL_CERT_HOME}/ca.pem"
+	[[ "${STEP_URL}" =~ ^http(s)?://([^:/]+)(:([1-9][0-9]*))?(/.*)?$ ]] || fail "Malformed URL for the step CA: [${STEP_URL}]"
+	[ -f "${STEP_PASSWORD_FILE}" ] || fail "Can't find the provisioner password file at [${STEP_PASSWORD_FILE}]"
 
-			if [ -f "${TEST_CA}" ] && ! openssl verify -CAfile "${TEST_CA}" "${LDAP_SSL_CERT}" &>/dev/null ; then
-				say "Certification Authority check failed for the new certificates (CA=${TEST_CA})- will not deploy them"
-				DEPLOY_CERTS="false"
-			else
-				# Everything matched, and either the CA test succeeded, or there was no CA to check against
-				DEPLOY_CERTS="true"
-			fi
-		else
-			say "Modulus check failed for the new certificates - will not deploy them"
-		fi
+	# Ok... so gather the pieces parsed above
+	STEP_HOST="${BASH_REMATCH[2]}"
+
+	# The port will be either 80 (if http://), 443 (if https://), or the one explicitly given
+	STEP_PORT="80"
+	[ -n "${BASH_REMATCH[1]}" ] && STEP_PORT="443"
+	[ -n "${BASH_REMATCH[4]}" ] && STEP_PORT="${BASH_REMATCH[4]}"
+	[ ${STEP_PORT} -lt 1 ] && fail "The port in the URL must be between 1 and 65535"
+	[ ${STEP_PORT} -gt 65535 ] && fail "The port in the URL must be between 1 and 65535"
+
+	[ -v CA_SOURCES ] || CA_SOURCES="/etc/pki/ca-trust/source"
+	[ -v CA_ANCHORS ] || CA_ANCHORS="${CA_SOURCES}/anchors"
+	STEP_CA_ANCHOR="${CA_ANCHORS}/step-ca.crt"
+	STEP_INT_ANCHOR="${CA_ANCHORS}/step-int.crt"
+
+	# 1) Download the step root CA
+	START="$(date +%s)"
+	MAX_WAIT=90
+	while true ; do
+		OUT="$(curl -kL -o "${STEP_CA_ANCHOR}" "${STEP_URL}/roots.pem" 2>&1)"
+		[ ${?} -eq 0 ] && break
+		NOW="$(date +%s)"
+		[ $(( NOW - START )) -ge ${MAX_WAIT} ] && fail "Timed out trying to reach the CA issuer at [${STEP_URL}]"
+		sleep 1 || fail "Sleep interrupted trying to wait for [${STEP_URL}] - cannot continue"
+	done
+
+	# 2) Bootstrap step
+	step ca bootstrap \
+		--ca-url "${STEP_URL}" \
+		--fingerprint "$(step certificate fingerprint "${STEP_CA_ANCHOR}")"
+
+	# 3) Pull the int CA (is this needed?)
+	# INT_FILE="xx02"
+	# csplit <(openssl s_client -connect "${STEP_HOST}:${STEP_PORT}" -showcerts </dev/null 2>/dev/null) \
+	#	'/BEGIN CERTIFICATE/' '{*}'
+	# sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${INT_FILE}"
+	# mv -vf "${INT_FILE}" "${STEP_INT_ANCHOR}"
+
+	# 4) Create the new certificate
+
+	SAN=()
+	SAN+=( --san "$(hostname)" )
+	SAN+=( --san "$(hostname -f)" )
+	if [ -v SERVICE_NAME ] ; then
+		SAN+=( --san "${SERVICE_NAME}" )
+		SAN+=( --san "${SERVICE_NAME}.${POD_NAMESPACE}" )
+
+		POD_DOMAIN="$(hostname -f)"
+		POD_DOMAIN="${POD_DOMAIN/*.svc./}"
+		SAN+=( --san "${SERVICE_NAME}.${POD_NAMESPACE}.svc.${POD_DOMAIN}" )
 	fi
-fi
 
-# If all these checks succeed, deploy the new certificates, removing existing files
-if ${DEPLOY_CERTS} ; then
-	say "New certificates were verified"
-	say "Removing the old certificates from [${LOCAL_CERT_HOME}]"
-	rm -f "${LOCAL_CERT_HOME}"/* &>/dev/null
-	say "Deploying the new certificates to [${LOCAL_CERT_HOME}]"
-	cp -vf "${LDAP_SSL_CERT}" "${LOCAL_CERT_HOME}/cert.pem"
-	cp -vf "${LDAP_SSL_KEY}" "${LOCAL_CERT_HOME}/key.pem"
+	step ca certificate \
+		"$(hostname)" "cert.pem" "key.pem" \
+		"${SAN[@]}" \
+		--size 4096 \
+		--kty RSA \
+		--provisioner-password-file "${STEP_PASSWORD_FILE}"
 
-	# This is the only piece of the puzzle that's optional
-	[ -n "${LDAP_SSL_CA}" ] && cp -vf "${LDAP_SSL_CA}" "${LOCAL_CERT_HOME}/ca.pem"
+	# 5) Deploy the new certificates and CA
+	cp -vf "${STEP_CA_ANCHOR}" "${LOCAL_CERT_HOME}/ca.pem"
+	cp -vf "cert.pem" "key.pem" "${LOCAL_CERT_HOME}"
+
+	# 6) Update the certificates
+	update-ca-trust extract
 fi
 
 say "Launching Samba (via supervisord)"

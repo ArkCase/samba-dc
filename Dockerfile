@@ -9,6 +9,8 @@ ARG ROCKY_VERSION="8.5"
 ARG SRC_IMAGE_BASE="345280441424.dkr.ecr.ap-south-1.amazonaws.com"
 ARG SRC_IMAGE_REPO="ark_samba_rpmbuild"
 ARG SRC_IMAGE="${SRC_IMAGE_BASE}/${SRC_IMAGE_REPO}:${VER}"
+ARG STEP_VER="0.23.3"
+ARG STEP_SRC="https://dl.step.sm/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli_${STEP_VER}_amd64.rpm"
 
 FROM "${SRC_IMAGE}" as src
 
@@ -24,6 +26,8 @@ ARG ARCH
 ARG OS
 ARG VER
 ARG PKG
+ARG STEP_VER
+ARG STEP_SRC
 
 #
 # Some important labels
@@ -68,6 +72,9 @@ RUN yum -y install \
 		telnet \
 		which \
     && \
+    curl -L -o step.rpm "${STEP_SRC}" && \
+    yum -y install step.rpm && \
+    rm -rf step.rpm && \
     yum -y clean all && \
     update-alternatives --set python /usr/bin/python3
 RUN rm -rf /rpm /etc/yum.repos.d/arkcase.repo
@@ -96,5 +103,5 @@ ADD init.sh /init.sh
 ADD test-ready.sh /test-ready.sh
 ADD test-live.sh /test-live.sh
 COPY samba-directory-templates.tar.gz /
-RUN chmod 755 /init.sh /usr/local/bin/export-cafile
+RUN chmod 755 /init.sh
 ENTRYPOINT /init.sh
