@@ -5,10 +5,12 @@ ARG ARCH="x86_64"
 ARG OS="linux"
 ARG VER="4.14.5-10"
 ARG PKG="samba"
-ARG ROCKY_VERSION="8.5"
-ARG SRC_IMAGE_BASE="345280441424.dkr.ecr.ap-south-1.amazonaws.com"
-ARG SRC_IMAGE_REPO="ark_samba_rpmbuild"
-ARG SRC_IMAGE="${SRC_IMAGE_BASE}/${SRC_IMAGE_REPO}:${VER}"
+ARG BASE_REGISTRY
+ARG BASE_REPO="rockylinux"
+ARG BASE_TAG="8.5"
+ARG SRC_BASE_REGISTRY="${BASE_REGISTRY}"
+ARG SRC_BASE_REPO="arkcase/samba-rpmbuild"
+ARG SRC_IMAGE="${SRC_BASE_REGISTRY}/${SRC_BASE_REPO}:${VER}"
 ARG STEP_VER="0.23.3"
 ARG STEP_SRC="https://dl.step.sm/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli_${STEP_VER}_amd64.rpm"
 
@@ -17,7 +19,8 @@ FROM "${SRC_IMAGE}" as src
 #
 # For actual execution
 #
-FROM rockylinux:${ROCKY_VERSION}
+# FROM "${BASE_REGISTRY}/${BASE_REPO}:${BASE_TAG}
+FROM "${BASE_REPO}:${BASE_TAG}
 
 #
 # Basic Parameters
