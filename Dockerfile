@@ -19,8 +19,8 @@ FROM "${SRC_IMAGE}" as src
 #
 # For actual execution
 #
-# FROM "${BASE_REGISTRY}/${BASE_REPO}:${BASE_TAG}
-FROM "${BASE_REPO}:${BASE_TAG}
+# FROM "${BASE_REGISTRY}/${BASE_REPO}:${BASE_TAG}"
+FROM "${BASE_REPO}:${BASE_TAG}"
 
 #
 # Basic Parameters
