@@ -146,7 +146,7 @@ echo -e "SupervisorD reports the Samba process as running"
 ${DEBUG} && echo -e "${OUT}"
 
 ${DEBUG} && set -x
-OUT="$(openssl s_client -connect localhost:636 -showcerts </dev/null 2>1)"
+OUT="$(openssl s_client -connect localhost:636 -showcerts </dev/null 2>&1)"
 RC=${?}
 ${DEBUG} && set +x
 if [ ${RC} -ne 0 ] ; then
