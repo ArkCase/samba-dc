@@ -1,4 +1,7 @@
 #!/bin/bash
+SCRIPT="$(readlink -f "${BASH_SOURCE:-${0}}")"
+BASEDIR="$(dirname "${SCRIPT}")"
+SCRIPT="$(basename "${SCRIPT}")"
 
 DEBUG="false"
 case "${DEBUG,,}" in
@@ -154,6 +157,6 @@ fi
 echo -e "SupervisorD reports the Samba process as running"
 ${DEBUG} && echo -e "${OUT}"
 
-# All appears to be well!
+# All appears to be well ... but are we really ready?
 echo -e "The instance is ready"
-exit 0
+exec "${BASEDIR}/test-live.sh"

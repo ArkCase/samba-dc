@@ -44,49 +44,47 @@ LABEL VERSION="${VER}"
 # Install all apps
 # The third line is for multi-site config (ping is for testing later)
 #
-RUN yum -y install epel-release yum-utils
-RUN yum -y update
-RUN yum-config-manager --setopt=*.priority=50 --save
+RUN yum -y install \
+        epel-release \
+        yum-utils \
+    && \
+    yum -y update && \
+    yum-config-manager --setopt=*.priority=50 --save
 COPY --from=src /root/rpmbuild/RPMS /rpm
 COPY arkcase.repo /etc/yum.repos.d
 RUN yum -y install \
-		attr \
-		bind-utils \
-		findutils \
-		krb5-pkinit \
-		krb5-server \
-		krb5-workstation \
-		nc \
-		net-tools \
-		openldap-clients \
-		python3-samba \
-		python3-samba-dc \
-		python3-pyyaml \
-		samba \
-		samba-dc \
-		samba-dc-bind-dlz \
-		samba-krb5-printing \
-		samba-vfs-iouring \
-		samba-winbind \
-		samba-winbind-krb5-locator \
-		samba-winexe \
-		sssd-krb5 \
-		supervisor \
-		telnet \
-		which \
+        attr \
+        bind-utils \
+        findutils \
+        krb5-pkinit \
+        krb5-server \
+        krb5-workstation \
+        nc \
+        net-tools \
+        openldap-clients \
+        openvpn \
+        python3-samba \
+        python3-samba-dc \
+        python3-pyyaml \
+        samba \
+        samba-dc \
+        samba-dc-bind-dlz \
+        samba-krb5-printing \
+        samba-vfs-iouring \
+        samba-winbind \
+        samba-winbind-krb5-locator \
+        samba-winexe \
+        sssd-krb5 \
+        supervisor \
+        telnet \
+        which \
     && \
     curl -L -o step.rpm "${STEP_SRC}" && \
     yum -y install step.rpm && \
     rm -rf step.rpm && \
     yum -y clean all && \
-    update-alternatives --set python /usr/bin/python3
-RUN rm -rf /rpm /etc/yum.repos.d/arkcase.repo
-
-
-#
-# This is for multisite (really?)
-#
-RUN yum -y install openvpn
+    update-alternatives --set python /usr/bin/python3 && \
+    rm -rf /rpm /etc/yum.repos.d/arkcase.repo
 
 #
 # Declare some important volumes
@@ -96,15 +94,12 @@ VOLUME /vpn
 VOLUME /var/log/samba
 VOLUME /var/lib/samba
 
-EXPOSE 80
+EXPOSE 389
 EXPOSE 636
 
 #
 # Set up script and run
 #
-ADD init.sh /init.sh
-ADD test-ready.sh /test-ready.sh
-ADD test-live.sh /test-live.sh
-COPY samba-directory-templates.tar.gz /
-RUN chmod 755 /init.sh
-ENTRYPOINT /init.sh
+COPY entrypoint test-ready.sh test-live.sh samba-directory-templates.tar.gz /
+RUN chmod 755 /entrypoint
+ENTRYPOINT /entrypoint
