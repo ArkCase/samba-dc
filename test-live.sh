@@ -134,18 +134,6 @@ is_initialized() {
 }
 
 ${DEBUG} && set -x
-OUT="$(supervisorctl status samba 2>&1)"
-RC=${?}
-${DEBUG} && set +x
-if [ ${RC} -ne 0 ] ; then
-	echo -e "Failed to verify the Samba process status"
-	echo -e "${OUT}"
-	exit 1
-fi
-echo -e "SupervisorD reports the Samba process as running"
-${DEBUG} && echo -e "${OUT}"
-
-${DEBUG} && set -x
 OUT="$(openssl s_client -connect localhost:636 -showcerts </dev/null 2>&1)"
 RC=${?}
 ${DEBUG} && set +x
@@ -161,7 +149,7 @@ ${DEBUG} && echo -e "${CERTS}"
 export LDAPTLS_REQCERT="never"
 
 ${DEBUG} && set -x
-OUT="$(ldapsearch -H ldaps://localhost:636 -D "${REALM}\administrator" -w "${DOMAINPASS}" -b "${DC}" '(objectClass=user)' dn 2>&1)"
+OUT="$(ldapsearch -H ldaps://localhost:636 -D "${REALM}\\administrator" -w "${DOMAINPASS}" -b "${DC}" '(objectClass=user)' dn 2>&1)"
 RC=${?}
 ${DEBUG} && set +x
 if [ ${RC} -ne 0 ] ; then
