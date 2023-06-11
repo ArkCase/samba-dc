@@ -413,11 +413,11 @@ if [ -v STEP_URL ] && [ -v STEP_PASSWORD_FILE ] ; then
 	START="$(date +%s)"
 	MAX_WAIT=90
 	while true ; do
-		OUT="$(curl -kL -o "${STEP_CA_ANCHOR}" "${STEP_URL}/roots.pem" 2>&1)"
-		[ ${?} -eq 0 ] && break
+		OUT="$(curl -kL -o "${STEP_CA_ANCHOR}" "${STEP_URL}/roots.pem" 2>&1)" && break
+		say "Failed to get the step root CA (rc=${?}):\n${OUT}"
 		NOW="$(date +%s)"
 		[ $(( NOW - START )) -ge ${MAX_WAIT} ] && fail "Timed out trying to reach the CA issuer at [${STEP_URL}]"
-		sleep 1 || fail "Sleep interrupted trying to wait for [${STEP_URL}] - cannot continue"
+		sleep 5 || fail "Sleep interrupted trying to wait for [${STEP_URL}] - cannot continue"
 	done
 
 	# 2) Bootstrap step
