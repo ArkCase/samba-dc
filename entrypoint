@@ -394,8 +394,11 @@ acme-init
 LOCAL_CERT_HOME="${SAMBA_PRIVATE}/tls"
 cp -vf "${SSL_DIR}/ca-chain.pem" "${LOCAL_CERT_HOME}/ca.pem"
 cp -vf "${SSL_DIR}/cert.pem" "${LOCAL_CERT_HOME}/cert.pem"
-cp -vf "${SSL_DIR}/cert.key" "${LOCAL_CERT_HOME}/key.pem"
 chmod ug=r,o= "${LOCAL_CERT_HOME}"/*.pem
+
+# This file has to have stricter permissions
+cp -vf "${SSL_DIR}/cert.key" "${LOCAL_CERT_HOME}/key.pem"
+chmod u=rw,go= "${LOCAL_CERT_HOME}/key.pem"
 
 say "Launching Samba (via supervisord)"
 exec /usr/bin/supervisord -n
