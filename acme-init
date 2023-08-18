@@ -299,7 +299,7 @@ fi
 #
 ################################################################################
 say "👉 Initializing the Step CA Acme Client"
-"${STEP}" ca bootstrap \
+"${STEP}" ca bootstrap -f \
 	--ca-url "${ACME_URL}" \
 	--fingerprint "$("${STEP}" certificate fingerprint "${ACME_ROOT_CA_ANCHOR}")"
 
@@ -351,27 +351,33 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 	[ -d "${SSL_DIR}" ] || mkdir -p "${SSL_DIR}" || fail "Failed to create the SSL certificate directory [${SSL_DIR}]"
 
-	[ -v KEYSTORE_PASSWORD ] || KEYSTORE_PASSWORD=""
-	if [ -z "${KEYSTORE_PASSWORD}" ] ; then
-		KEYSTORE_PASSWORD="$(render_password)"
-		echo -n "${KEYSTORE_PASSWORD}" > "${SSL_DIR}/keystore.pass"
+	[ -v ACME_KEYSTORE_PASSWORD_FILE ] || ACME_KEYSTORE_PASSWORD_FILE="${SSL_DIR}/keystore.pass"
+
+	# Allow the use of ACME_KEYSTORE_PASSWORD to set the password. This isn't
+	# particularly secure, but it may be required in some instances where the
+	# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
+	if [ -v ACME_KEYSTORE_PASSWORD ] && [ -n "${ACME_KEYSTORE_PASSWORD}" ] ; then
+		echo -n "${ACME_KEYSTORE_PASSWORD}" > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render the password file at [${ACME_KEYSTORE_PASSWORD_FILE}] with the password given in ACME_KEYSTORE_PASSWORD"
 	fi
+
+	[ -e "${ACME_KEYSTORE_PASSWORD_FILE}" ] || render_password > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render a new password into [${ACME_KEYSTORE_PASSWORD_FILE}]"
 
 	say "👉 Rendering a new certificate for this pod's use"
 	"${STEP}" ca certificate \
 		"${FQSN:-${FQDN}}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/key.pem" \
 		"${SAN[@]}" \
+		-f \
 		--size 4096 \
 		--kty RSA \
 		--provisioner-password-file "${ACME_PASSWORD_FILE}" \
-		--password-file=<(echo -n "${KEYSTORE_PASSWORD}")
+		--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
 	say "\t✅ Certificate ready!"
 
 	say "👉 Creating an encrypted version of the key..."
 	"${OPENSSL}" rsa -aes256 \
 		-in "${SSL_DIR}/key.pem" \
 		-out "${SSL_DIR}/encrypted-key.pem" \
-		-passout file:<(/usr/bin/yes "${KEYSTORE_PASSWORD}" | head -2)
+		-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
 	say "\t✅ Encrypted key ready!"
 
 	say "👉 Copying the root and intermediate CAs into the target directory..."
@@ -410,10 +416,10 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		-export \
 		-in "${SSL_DIR}/cert.pem" \
 		-inkey "${SSL_DIR}/key.pem" \
-		-passin file:<(/usr/bin/yes "${KEYSTORE_PASSWORD}" | head -2) \
+		-passin file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2) \
 		-name "${FQDN}" \
 		-out "${SSL_DIR}/keystore.pkcs12" \
-		-passout file:<(/usr/bin/yes "${KEYSTORE_PASSWORD}" | head -2)
+		-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
 	say "\t✅ Ready!"
 
 	# Find the Java keytool, if it's installed
@@ -425,10 +431,10 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			"${KEYTOOL}" \
 				-importkeystore \
 				-srckeystore "${SSL_DIR}/keystore.pkcs12"  \
-				-srcstorepass "${KEYSTORE_PASSWORD}"  \
+				-srcstorepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"  \
 				-srcstoretype PKCS12 \
 				-destkeystore "${SSL_DIR}/keystore.${STORETYPE}" \
-				-deststorepass "${KEYSTORE_PASSWORD}" \
+				-deststorepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
 				-deststoretype "${STORETYPE}"
 			say "\t✅ Ready!"
 		done
