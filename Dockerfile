@@ -7,10 +7,11 @@ ARG BASE_TAG="8.5"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG VER="4.14.5-10"
+ARG BLD="01"
 ARG PKG="samba"
 ARG SRC_BASE_REGISTRY="${PUBLIC_REGISTRY}"
 ARG SRC_BASE_REPO="arkcase/samba-rpmbuild"
-ARG STEP_VER="0.23.3"
+ARG STEP_VER="0.24.4"
 ARG STEP_SRC="https://dl.step.sm/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli_${STEP_VER}_amd64.rpm"
 
 FROM "${SRC_BASE_REGISTRY}/${SRC_BASE_REPO}:${VER}" as src
@@ -60,6 +61,7 @@ RUN yum -y install \
         krb5-workstation \
         nc \
         net-tools \
+        openssl \
         openldap-clients \
         openvpn \
         python3-samba \
@@ -77,10 +79,8 @@ RUN yum -y install \
         supervisor \
         telnet \
         which \
+        "${STEP_SRC}" \
     && \
-    curl -L -o step.rpm "${STEP_SRC}" && \
-    yum -y install step.rpm && \
-    rm -rf step.rpm && \
     yum -y clean all && \
     update-alternatives --set python /usr/bin/python3 && \
     rm -rf /rpm /etc/yum.repos.d/arkcase.repo
@@ -99,6 +99,11 @@ EXPOSE 636
 #
 # Set up script and run
 #
-COPY entrypoint test-ready.sh test-live.sh samba-directory-templates.tar.gz /
-RUN chmod 755 /entrypoint
+COPY --chown=root:root entrypoint test-ready.sh test-live.sh samba-directory-templates.tar.gz /
+COPY --chown=root:root acme-init /usr/local/bin/
+RUN chmod 755 /entrypoint /test-ready.sh /test-live.sh /usr/local/bin/acme-init
+
+# This is required by acme-init. It's ok to set it to root for this container
+ENV ACM_GROUP="root"
+
 ENTRYPOINT /entrypoint
