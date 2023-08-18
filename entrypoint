@@ -383,83 +383,18 @@ else
 	rm -f "${SUPERVISOR_VPN_CONF}" &>/dev/null
 fi
 
+
+#
+# Download and deploy the required certificates
+#
+[ -v SSL_DIR ] || SSL_DIR="/.ssl"
+acme-init
+
+# Now deploy the generated files
 LOCAL_CERT_HOME="${SAMBA_PRIVATE}/tls"
-
-#
-# Download the new certificates from the step-ca instance
-#
-
-if [ -v STEP_URL ] && [ -v STEP_PASSWORD_FILE ] ; then
-
-	[[ "${STEP_URL}" =~ ^http(s)?://([^:/]+)(:([1-9][0-9]*))?(/.*)?$ ]] || fail "Malformed URL for the step CA: [${STEP_URL}]"
-	[ -f "${STEP_PASSWORD_FILE}" ] || fail "Can't find the provisioner password file at [${STEP_PASSWORD_FILE}]"
-
-	# Ok... so gather the pieces parsed above
-	STEP_HOST="${BASH_REMATCH[2]}"
-
-	# The port will be either 80 (if http://), 443 (if https://), or the one explicitly given
-	STEP_PORT="80"
-	[ -n "${BASH_REMATCH[1]}" ] && STEP_PORT="443"
-	[ -n "${BASH_REMATCH[4]}" ] && STEP_PORT="${BASH_REMATCH[4]}"
-	[ ${STEP_PORT} -lt 1 ] && fail "The port in the URL must be between 1 and 65535"
-	[ ${STEP_PORT} -gt 65535 ] && fail "The port in the URL must be between 1 and 65535"
-
-	[ -v CA_SOURCES ] || CA_SOURCES="/etc/pki/ca-trust/source"
-	[ -v CA_ANCHORS ] || CA_ANCHORS="${CA_SOURCES}/anchors"
-	STEP_CA_ANCHOR="${CA_ANCHORS}/step-ca.crt"
-	STEP_INT_ANCHOR="${CA_ANCHORS}/step-int.crt"
-
-	# 1) Download the step root CA
-	START="$(date +%s)"
-	MAX_WAIT=90
-	while true ; do
-		OUT="$(curl -kL -o "${STEP_CA_ANCHOR}" "${STEP_URL}/roots.pem" 2>&1)" && break
-		say "Failed to get the step root CA (rc=${?}):\n${OUT}"
-		NOW="$(date +%s)"
-		[ $(( NOW - START )) -ge ${MAX_WAIT} ] && fail "Timed out trying to reach the CA issuer at [${STEP_URL}]"
-		sleep 5 || fail "Sleep interrupted trying to wait for [${STEP_URL}] - cannot continue"
-	done
-
-	# 2) Bootstrap step
-	step ca bootstrap \
-		--ca-url "${STEP_URL}" \
-		--fingerprint "$(step certificate fingerprint "${STEP_CA_ANCHOR}")"
-
-	# 3) Pull the int CA (is this needed?)
-	# INT_FILE="xx02"
-	# csplit <(openssl s_client -connect "${STEP_HOST}:${STEP_PORT}" -showcerts </dev/null 2>/dev/null) \
-	#	'/BEGIN CERTIFICATE/' '{*}'
-	# sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${INT_FILE}"
-	# mv -vf "${INT_FILE}" "${STEP_INT_ANCHOR}"
-
-	# 4) Create the new certificate
-
-	SAN=()
-	SAN+=( --san "$(hostname)" )
-	SAN+=( --san "$(hostname -f)" )
-	if [ -v SERVICE_NAME ] ; then
-		SAN+=( --san "${SERVICE_NAME}" )
-		SAN+=( --san "${SERVICE_NAME}.${POD_NAMESPACE}" )
-
-		POD_DOMAIN="$(hostname -f)"
-		POD_DOMAIN="${POD_DOMAIN/*.svc./}"
-		SAN+=( --san "${SERVICE_NAME}.${POD_NAMESPACE}.svc.${POD_DOMAIN}" )
-	fi
-
-	step ca certificate \
-		"$(hostname)" "cert.pem" "key.pem" \
-		"${SAN[@]}" \
-		--size 4096 \
-		--kty RSA \
-		--provisioner-password-file "${STEP_PASSWORD_FILE}"
-
-	# 5) Deploy the new certificates and CA
-	cp -vf "${STEP_CA_ANCHOR}" "${LOCAL_CERT_HOME}/ca.pem"
-	cp -vf "cert.pem" "key.pem" "${LOCAL_CERT_HOME}"
-
-	# 6) Update the certificates
-	update-ca-trust extract
-fi
+cat "${SSL_DIR}/acme-root-ca.pem" "${SSL_DIR}/acme-int-ca.pem" > "${LOCAL_CERT_HOME}/ca.pem"
+cp -vf "${SSL_DIR}/cert.pem" "${SSL_DIR}/key.pem" "${LOCAL_CERT_HOME}"
+chmod ug=r,o= "${LOCAL_CERT_HOME}"/*.pem
 
 say "Launching Samba (via supervisord)"
 exec /usr/bin/supervisord -n
