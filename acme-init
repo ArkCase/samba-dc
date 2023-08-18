@@ -63,7 +63,7 @@ is_supported() {
 
 render_password() {
 	local V="$(/usr/bin/dd if=/dev/urandom bs=1K count=16 2>/dev/null | /usr/bin/base64 -w 0)"
-	echo -n "${V:0:16}"
+	echo -n "${V:0:32}"
 }
 
 validate_cert() {
@@ -166,9 +166,9 @@ is_valid_hostname "${ACME_HOST}" || fail "Malformed URL for the ACME CA: bad hos
 [ ${ACME_PORT} -ge 1 ] || fail "The port in the URL must be between 1 and 65535"
 [ ${ACME_PORT} -le 65535 ] || fail "The port in the URL must be between 1 and 65535"
 
-ACME_ROOT_CA_BASENAME="acme-root-ca"
+ACME_ROOT_CA_BASENAME="ca-root"
 ACME_ROOT_CA_ANCHOR="${ANCHORS}/${ACME_ROOT_CA_BASENAME}.crt"
-ACME_INT_CA_BASENAME="acme-int-ca"
+ACME_INT_CA_BASENAME="ca-int"
 ACME_INT_CA_ANCHOR="${ANCHORS}/${ACME_INT_CA_BASENAME}.crt"
 
 CURL="$(type -P curl 2>/dev/null)" || fail "cURL is not installed, cannot continue!"
@@ -351,20 +351,34 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 	[ -d "${SSL_DIR}" ] || mkdir -p "${SSL_DIR}" || fail "Failed to create the SSL certificate directory [${SSL_DIR}]"
 
-	[ -v ACME_KEYSTORE_PASSWORD_FILE ] || ACME_KEYSTORE_PASSWORD_FILE="${SSL_DIR}/keystore.pass"
+	# This array will contain the list of (absolute) paths for all
+	# files whose ownership and permissions will be set to the most
+	# restrictive of all: only readable by the owner
+	SECURE_FILES=()
 
-	# Allow the use of ACME_KEYSTORE_PASSWORD to set the password. This isn't
-	# particularly secure, but it may be required in some instances where the
-	# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
-	if [ -v ACME_KEYSTORE_PASSWORD ] && [ -n "${ACME_KEYSTORE_PASSWORD}" ] ; then
-		echo -n "${ACME_KEYSTORE_PASSWORD}" > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render the password file at [${ACME_KEYSTORE_PASSWORD_FILE}] with the password given in ACME_KEYSTORE_PASSWORD"
+	if [ -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
+		[ -n "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The variable ACME_KEYSTORE_PASSWORD_FILE may not be empty"
+		[ -s "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The password file [${ACME_KEYSTORE_PASSWORD_FILE}] may not be empty"
+	else
+		# We weren't given a password file to use, so use the default value
+		ACME_KEYSTORE_PASSWORD_FILE="${SSL_DIR}/keystore.pass"
+		SECURE_FILES+="${ACME_KEYSTORE_PASSWORD_FILE}"
+
+		# Allow the use of ACME_KEYSTORE_PASSWORD to set the password. This isn't
+		# particularly secure, but it may be required in some instances where the
+		# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
+		if [ -v ACM_KEYSTORE_PASSWORD ] ; then
+			[ -n "${ACME_KEYSTORE_PASSWORD}" ] || fail "The variable ACM_KEYSTORE_PASSWORD may not be empty"
+			echo -n "${ACME_KEYSTORE_PASSWORD}" > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render the password file at [${ACME_KEYSTORE_PASSWORD_FILE}] with the password given in ACME_KEYSTORE_PASSWORD"
+		else
+			# We weren't given a password, so just render a random one
+			render_password > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render a new password into [${ACME_KEYSTORE_PASSWORD_FILE}]"
+		fi
 	fi
-
-	[ -e "${ACME_KEYSTORE_PASSWORD_FILE}" ] || render_password > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render a new password into [${ACME_KEYSTORE_PASSWORD_FILE}]"
 
 	say "👉 Rendering a new certificate for this pod's use"
 	"${STEP}" ca certificate \
-		"${FQSN:-${FQDN}}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/key.pem" \
+		"${FQSN:-${FQDN}}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
 		"${SAN[@]}" \
 		-f \
 		--size 4096 \
@@ -375,49 +389,37 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 	say "👉 Creating an encrypted version of the key..."
 	"${OPENSSL}" rsa -aes256 \
-		-in "${SSL_DIR}/key.pem" \
-		-out "${SSL_DIR}/encrypted-key.pem" \
+		-in "${SSL_DIR}/cert.key" \
+		-out "${SSL_DIR}/cert.key.enc" \
 		-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
+	SECURE_FILES+=("${SSL_DIR}/cert.key")
 	say "\t✅ Encrypted key ready!"
 
 	say "👉 Copying the root and intermediate CAs into the target directory..."
-	/usr/bin/cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/acme-root-ca.pem"
-	/usr/bin/cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/acme-int-ca.pem"
+	/usr/bin/cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
+	/usr/bin/cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
+	cat \
+		"${ACME_INT_CA_ANCHOR}" \
+		"${ACME_ROOT_CA_ANCHOR}" \
+		> "${SSL_DIR}/ca-chain.pem"
 	say "\t✅ Done!"
 
-	if is_supported TOMCAT ; then
-		say "👉 Rendering the CA chains for Tomcat..."
-		cat \
-			"${ACME_INT_CA_ANCHOR}" \
-			"${ACME_ROOT_CA_ANCHOR}" \
-			> "${SSL_DIR}/acme-ca-chain-tomcat.pem"
-		say "\t✅ Done!"
-	fi
-
-	if is_supported HAPROXY ; then
-		say "👉 Rendering the certificate files for HAProxy..."
-		cat \
-			"${SSL_DIR}/cert.pem" \
-			"${ACME_INT_CA_ANCHOR}" \
-			"${ACME_ROOT_CA_ANCHOR}" \
-			"${SSL_DIR}/key.pem" \
-			> "${SSL_DIR}/acme-chain-haproxy.pem"
-		cat \
-			"${SSL_DIR}/cert.pem" \
-			"${ACME_INT_CA_ANCHOR}" \
-			"${ACME_ROOT_CA_ANCHOR}" \
-			"${SSL_DIR}/encrypted-key.pem" \
-			> "${SSL_DIR}/acme-chain-haproxy-enc.pem"
-		say "\t✅ Done!"
-	fi
+	say "👉 Rendering the certificate files for HAProxy..."
+	cat \
+		"${SSL_DIR}/cert.pem" \
+		"${SSL_DIR}/ca-chain.pem" \
+		"${SSL_DIR}/cert.key" \
+		> "${SSL_DIR}/haproxy-cert.pem"
+	SECURE_FILES+=("${SSL_DIR}/haproxy-cert.pem")
+	say "\t✅ Done!"
 
 	say "👉 Rendering a PKCS12 Keystore with the new certificate & key..."
 	"${OPENSSL}" pkcs12 \
 		-export \
 		-in "${SSL_DIR}/cert.pem" \
-		-inkey "${SSL_DIR}/key.pem" \
+		-inkey "${SSL_DIR}/cert.key" \
 		-passin file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2) \
-		-name "${FQDN}" \
+		-name "acme" \
 		-out "${SSL_DIR}/keystore.pkcs12" \
 		-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
 	say "\t✅ Ready!"
@@ -453,15 +455,15 @@ chmod -R ug=rX,o= "${SSL_DIR}"
 # by the user who will be consuming them ... the other files
 # can easily be group-readable since they're all encrypted
 # one way or another, or are meant to be publicly-accessible
-FILES=()
-for n in "key.pem" "keystore.pass" ; do
-	[ -f "${SSL_DIR}/${n}" ] && FILES+=("${SSL_DIR}/${n}")
+SECURE_FILES=()
+for n in "cert.key" "keystore.pass" "haproxy-cert.pem" ; do
+	[ -f "${SSL_DIR}/${n}" ] && SECURE_FILES+=("${SSL_DIR}/${n}")
 done
-if [ ${#FILES[@]} -gt 0 ] ; then
-	KEY_OWNER="root:root"
-	[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}:${ACM_GROUP}"
-	chown "${KEY_OWNER}" "${FILES[@]}"
-	chmod -R u=r,go= "${FILES[@]}"
+if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
+	KEY_OWNER="root"
+	[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}"
+	chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
+	chmod -R u=r,go= "${SECURE_FILES[@]}"
 fi
 
 say "\t✅ Done!"

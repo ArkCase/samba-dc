@@ -392,8 +392,9 @@ acme-init
 
 # Now deploy the generated files
 LOCAL_CERT_HOME="${SAMBA_PRIVATE}/tls"
-cat "${SSL_DIR}/acme-root-ca.pem" "${SSL_DIR}/acme-int-ca.pem" > "${LOCAL_CERT_HOME}/ca.pem"
-cp -vf "${SSL_DIR}/cert.pem" "${SSL_DIR}/key.pem" "${LOCAL_CERT_HOME}"
+cp "${SSL_DIR}/ca-chain.pem" > "${LOCAL_CERT_HOME}/ca.pem"
+cp -vf "${SSL_DIR}/cert.pem" "${LOCAL_CERT_HOME}/cert.pem"
+cp -vf "${SSL_DIR}/cert.key" "${LOCAL_CERT_HOME}/key.pem"
 chmod ug=r,o= "${LOCAL_CERT_HOME}"/*.pem
 
 say "Launching Samba (via supervisord)"
