@@ -347,7 +347,11 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		)
 	done < <(echo -e "${SERVICE}\n${SERVICE_NAME}" | sort -u | sed -e '/^\s*$/d')
 
-	SAN+=(--san "${POD}")
+	SAN+=(
+		--san "${POD}"
+		--san "localhost.localdomain"
+		--san "localhost"
+	)
 
 	[ -d "${SSL_DIR}" ] || mkdir -p "${SSL_DIR}" || fail "Failed to create the SSL certificate directory [${SSL_DIR}]"
 
@@ -441,32 +445,29 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			say "\t✅ Ready!"
 		done
 	fi
+
+	say "👉 Setting tight permissions for the generated data..."
+
+	# By default, owned by root but readable by ACM_GROUP
+	chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
+	chmod -R ug=rX,o= "${SSL_DIR}"
+
+	# Secure the most sensitive files so they're only readable
+	# by the user who will be consuming them ... the other files
+	# can easily be group-readable since they're all encrypted
+	# one way or another, or are meant to be publicly-accessible
+	if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
+		KEY_OWNER="root"
+		[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}"
+		chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
+		chmod -R u=r,go= "${SECURE_FILES[@]}"
+	fi
+
+	say "\t✅ Done!"
+
 else
-	err "Can't find the provisioner password file at [${ACME_PASSWORD_FILE}], did not generate any new certificates"
+	err "Can't find the provisioner password file at [${ACME_PASSWORD_FILE}], did not generate any new certificates or keystores"
 fi
-
-say "👉 Setting tight permissions for the certificate directory..."
-
-# By default, owned by root but readable by ACM_GROUP
-chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
-chmod -R ug=rX,o= "${SSL_DIR}"
-
-# Secure the most sensitive files so they're only readable
-# by the user who will be consuming them ... the other files
-# can easily be group-readable since they're all encrypted
-# one way or another, or are meant to be publicly-accessible
-SECURE_FILES=()
-for n in "cert.key" "keystore.pass" "haproxy-cert.pem" ; do
-	[ -f "${SSL_DIR}/${n}" ] && SECURE_FILES+=("${SSL_DIR}/${n}")
-done
-if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
-	KEY_OWNER="root"
-	[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}"
-	chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
-	chmod -R u=r,go= "${SECURE_FILES[@]}"
-fi
-
-say "\t✅ Done!"
 
 say "👉 Updating the trusted certificates"
 /usr/bin/chown -R root:root "${ANCHORS}"
