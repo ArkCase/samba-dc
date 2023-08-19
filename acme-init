@@ -315,9 +315,9 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	FQDN="$(/usr/bin/hostname -f)"
 	IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
 
-	[ -v SERVICE_NAME ] || SERVICE_NAME="${SERVICE}"
+	[ -v ACME_SERVICE_NAME ] || ACME_SERVICE_NAME="${SERVICE}"
 
-	# SERVICE_NAME is the "consumable" service, while
+	# ACME_SERVICE_NAME is the "consumable" service, while
 	# SERVICE is the (possibly headless) default service
 	# associated to a pod. They *may* be the same but
 	# aren't required to be.
@@ -346,7 +346,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			--san "${SVC}"
 			--san "${POD}.${SVC}"
 		)
-	done < <(echo -e "${SERVICE}\n${SERVICE_NAME}" | sort -u | sed -e '/^\s*$/d')
+	done < <(echo -e "${SERVICE}\n${ACME_SERVICE_NAME}" | sort -u | sed -e '/^\s*$/d')
 
 	SAN+=(
 		--san "${POD}"
