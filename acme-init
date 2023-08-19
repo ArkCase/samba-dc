@@ -332,7 +332,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		if [ -n "${NAMESPACE}" ] && [ -n "${CLUSTER_DOMAIN}" ] ; then
 			[ -n "${FQSN}" ] || FQSN="${SVC}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
 			SAN+=(
-				--san "${FQSN}"
+				--san "${SVC}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
 				--san "${POD}.${SVC}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
 			)
 		fi
