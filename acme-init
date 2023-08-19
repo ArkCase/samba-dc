@@ -62,8 +62,9 @@ is_supported() {
 }
 
 render_password() {
-	local V="$(/usr/bin/dd if=/dev/urandom bs=1K count=16 2>/dev/null | /usr/bin/base64 -w 0)"
-	echo -n "${V:0:32}"
+	local V=""
+	read V REST < <(tr -dc '[:alnum:]' < /dev/urandom | fold -w ${1:-32} | head -1)
+	echo -n "${V}"
 }
 
 validate_cert() {
