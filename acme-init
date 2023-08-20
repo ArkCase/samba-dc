@@ -315,39 +315,49 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	FQDN="$(/usr/bin/hostname -f)"
 	IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
 
-	[ -v ACME_SERVICE_NAME ] || ACME_SERVICE_NAME="${SERVICE}"
-
-	# ACME_SERVICE_NAME is the "consumable" service, while
-	# SERVICE is the (possibly headless) default service
-	# associated to a pod. They *may* be the same but
-	# aren't required to be.
-
 	# Fully-Qualified Service Name
 	FQSN=""
 
 	SAN=()
-	while read SVC ; do
-		[ -n "${SVC}" ] || continue
 
-		if [ -n "${NAMESPACE}" ] && [ -n "${CLUSTER_DOMAIN}" ] ; then
-			[ -n "${FQSN}" ] || FQSN="${SVC}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-			SAN+=(
-				--san "${SVC}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-				--san "${POD}.${SVC}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-			)
-		fi
+	# ACME_SERVICE_NAME is the "consumable" service, while
+	# SERVICE is the (possibly headless) default service
+	# associated to a pod. They *may* be the same but
+	# aren't required to be. Thus, we check to see if they're
+	# the same, to avoid adding duplicate values
+	[ -v ACME_SERVICE_NAME ] || ACME_SERVICE_NAME="${SERVICE}"
+	if [ "${ACME_SERVICE_NAME}" != "${SERVICE}" ] ; then
 		if [ -n "${NAMESPACE}" ] ; then
+			if [ -n "${CLUSTER_DOMAIN}" ] ; then
+				[ -n "${FQSN}" ] || FQSN="${ACME_SERVICE_NAME}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
+				SAN+=(--san "${FQSN}")
+			fi
+			SAN+=(--san "${ACME_SERVICE_NAME}.${NAMESPACE}")
+		fi
+		SAN+=(--san "${ACME_SERVICE_NAME}")
+	fi
+
+	if [ -n "${SERVICE}" ] ; then
+		if [ -n "${NAMESPACE}" ] ; then
+			if [ -n "${CLUSTER_DOMAIN}" ] ; then
+				[ -n "${FQSN}" ] || FQSN="${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
+				SAN+=(
+					--san "${POD}.${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
+					--san "${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
+				)
+			fi
 			SAN+=(
-				--san "${SVC}.${NAMESPACE}"
-				--san "${POD}.${SVC}.${NAMESPACE}"
+				--san "${POD}.${SERVICE}.${NAMESPACE}"
+				--san "${SERVICE}.${NAMESPACE}"
 			)
 		fi
 		SAN+=(
-			--san "${SVC}"
-			--san "${POD}.${SVC}"
+			--san "${POD}.${SERVICE}"
+			--san "${SERVICE}"
 		)
-	done < <(echo -e "${SERVICE}\n${ACME_SERVICE_NAME}" | sort -u | sed -e '/^\s*$/d')
+	fi
 
+	# The least specific values
 	SAN+=(
 		--san "${POD}"
 		--san "localhost.localdomain"
@@ -423,6 +433,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		-export \
 		-in "${SSL_DIR}/cert.pem" \
 		-inkey "${SSL_DIR}/cert.key" \
+		-certfile "${SSL_DIR}/ca-chain.pem" \
 		-passin file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2) \
 		-name "acme" \
 		-out "${SSL_DIR}/keystore.pkcs12" \
@@ -451,11 +462,11 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 
 	# By default, owned by root but readable by ACM_GROUP
 	chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
-	chmod -R ug=rX,o= "${SSL_DIR}"
+	chmod -R a=rX "${SSL_DIR}"
 
 	# Secure the most sensitive files so they're only readable
 	# by the user who will be consuming them ... the other files
-	# can easily be group-readable since they're all encrypted
+	# can easily be world-readable since they're all encrypted
 	# one way or another, or are meant to be publicly-accessible
 	if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
 		KEY_OWNER="root"
