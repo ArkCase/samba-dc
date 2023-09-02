@@ -1,5 +1,5 @@
 #!/bin/bash
-[ "$(/usr/bin/id -u)" -eq 0 ] || exec /usr/bin/sudo --non-interactive --preserve-env "${0}" "${@}"
+[ "$(/usr/bin/id -u)" -eq 0 ] || exec /usr/bin/sudo --non-interactive --preserve-env "PATH=${PATH}" "${0}" "${@}"
 
 # Just for safety's sake
 cd /
@@ -45,6 +45,28 @@ is_valid_url() {
 	[[ "${URL}" =~ ^([^:/?#]+)://([^/?#]*)?([^?#]*)([?]([^#]*))?(#(.*))?$ ]] || return 1
 	return 0
 }
+
+validate_ip() {
+   [ ${#} -ge 1 ] || return 1
+   local PARTS=()
+   for IP in "${@}" ; do
+	   IFS="." PARTS=(${IP})
+	   # Is it made of 4 parts separated by dots?
+	   [ ${#PARTS[@]} -eq 4 ] || return 1
+	   for p in "${PARTS[@]}" ; do
+		   # Is it a 1-3 digit number?
+		   [[ "${p}" =~ ^[0-9]{1,3}$ ]] || return 1
+		   # Don't allow leading zeros
+		   [[ "${p}" =~ ^0[0-9]{1,2}$ ]] && return 1
+		   # Is it in [0..255]?
+		   [ ${p} -ge 0 ] || return 1
+		   [ ${p} -le 255 ] || return 1
+	   done
+	   echo "${IP}"
+   done
+   return 0
+}
+
 
 is_variable_true() {
 	local V="${1}"
@@ -142,8 +164,8 @@ download_from_port() {
 download_chain() {
 	local CERT_BASE_NAME="${1}"
 	local URL="${2}"
-	OUT="$("${CURL}" -kL --fail --connect-timeout 5 -o >(install_chain "${CERT_BASE_NAME}") "${URL}" 2>&1)"
-	RC=${?}
+	local RC=0
+	OUT="$("${CURL}" -kL --fail --silent --show-error --connect-timeout 5 -o >(install_chain "${CERT_BASE_NAME}") "${URL}" 2>&1)" || RC=${?}
 	[ ${RC} -ne 0 ] && err "Failed to download the certificates from [${URL}] (rc=${RC}):\n${OUT}"
 	return ${RC}
 }
@@ -172,51 +194,67 @@ ACME_ROOT_CA_ANCHOR="${ANCHORS}/${ACME_ROOT_CA_BASENAME}.crt"
 ACME_INT_CA_BASENAME="ca-int"
 ACME_INT_CA_ANCHOR="${ANCHORS}/${ACME_INT_CA_BASENAME}.crt"
 
+################################################################################
+#
+# Before we start ... do we already have what we need?
+#
+################################################################################
 CURL="$(type -P curl 2>/dev/null)" || fail "cURL is not installed, cannot continue!"
 CSPLIT="$(type -P csplit 2>/dev/null)" || fail "Csplit is not installed, cannot continue!"
 STEP="$(type -P step 2>/dev/null)" || fail "Step is not installed, cannot continue!"
 OPENSSL="$(type -P openssl 2>/dev/null)" || fail "OpenSSL is not installed, cannot continue!"
+SHA256SUM="$(type -P sha256sum 2>/dev/null)" || fail "sha256sum is not installed, cannot continue!"
 
 ################################################################################
 #
-# Step 1: Download the root CA we'll use to trust everything from this cluster
+# Check that our existing stuff is valid
 #
 ################################################################################
+GENERATE_NEW_CERTIFICATES="false"
+acme-validate || GENERATE_NEW_CERTIFICATES="true"
 
-# Wait up to 5 minutes for the CA to come up
-MAX_WAIT=300
-START="$(/usr/bin/date +%s)"
-say "👉 Fetching the root CA certificate from [${ACME_HOST}]"
-while true ; do
+if "${GENERATE_NEW_CERTIFICATES}" ; then
+	################################################################################
+	#
+	# Download the root CA we'll use to trust everything from this cluster
+	#
+	################################################################################
+
+	# Wait up to 5 minutes for the CA to come up
+	MAX_WAIT=300
+	START="$(/usr/bin/date +%s)"
+	say "👉 Fetching the root CA certificate from [${ACME_HOST}]"
+	while true ; do
+		# TODO: What's the standard way to do this in ACME-land?
+		OUT="$("${CURL}" -kL --fail --silent --show-error -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
+		err "Failed to get the step root CA (rc=${?}):\n${OUT}"
+		NOW="$(/usr/bin/date +%s)"
+		[ $(( NOW - START )) -ge ${MAX_WAIT} ] && fail "Timed out trying to reach the CA issuer at [${ACME_URL}]"
+		sleep 5 || fail "Sleep interrupted trying to wait for [${ACME_URL}] - cannot continue"
+	done
+	say "\t✅ Fetch OK!"
+
+	# Fetch the intermediate CA as well
 	# TODO: What's the standard way to do this in ACME-land?
-	OUT="$("${CURL}" -kL --fail -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
-	say "Failed to get the step root CA (rc=${?}):\n${OUT}"
-	NOW="$(/usr/bin/date +%s)"
-	[ $(( NOW - START )) -ge ${MAX_WAIT} ] && fail "Timed out trying to reach the CA issuer at [${ACME_URL}]"
-	sleep 5 || fail "Sleep interrupted trying to wait for [${ACME_URL}] - cannot continue"
-done
-say "\t✅ Fetch OK!"
-
-# Fetch the intermediate CA as well
-# TODO: What's the standard way to do this in ACME-land?
-say "👉 Fetching the intermediate CA certificate from [${ACME_HOST}]"
-(
-	set -euo pipefail
-	D="$(/usr/bin/mktemp -d)"
-	cd "${D}"
-	INT_FILE="xx02"
-	"${CSPLIT}" <("${OPENSSL}" s_client -connect "${ACME_HOST}:${ACME_PORT}" -showcerts </dev/null 2>/dev/null) \
-		'/BEGIN CERTIFICATE/' '{*}' &>/dev/null
-	/usr/bin/sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${INT_FILE}"
-	/usr/bin/mv -f "${INT_FILE}" "${ACME_INT_CA_ANCHOR}"
-	cd /
-	/usr/bin/rm -rf "${D}" || true
-) || fail "Failed to fetch the intermediate CA from [${ACME_URL}]"
-say "\t✅ Fetch OK!"
+	say "👉 Fetching the intermediate CA certificate from [${ACME_HOST}]"
+	(
+		set -euo pipefail
+		D="$(/usr/bin/mktemp -d)"
+		cd "${D}"
+		INT_FILE="xx02"
+		"${CSPLIT}" <("${OPENSSL}" s_client -connect "${ACME_HOST}:${ACME_PORT}" -showcerts </dev/null 2>/dev/null) \
+			'/BEGIN CERTIFICATE/' '{*}' &>/dev/null
+		/usr/bin/sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${INT_FILE}"
+		/usr/bin/mv -f "${INT_FILE}" "${ACME_INT_CA_ANCHOR}"
+		cd /
+		/usr/bin/rm -rf "${D}" || true
+	) || fail "Failed to fetch the intermediate CA from [${ACME_URL}]"
+	say "\t✅ Fetch OK!"
+fi
 
 ################################################################################
 #
-# Step 2: Trust the certificates we're told to trust
+# Trust the certificates we're told to trust
 #
 ################################################################################
 say "👉 Deploying the common trusted certificates from [${SSL_TRUSTS_DIR}]"
@@ -296,128 +334,158 @@ fi
 
 ################################################################################
 #
-# Step 3: Initialize the ACME client
-#
-################################################################################
-say "👉 Initializing the Step CA Acme Client"
-"${STEP}" ca bootstrap -f \
-	--ca-url "${ACME_URL}" \
-	--fingerprint "$("${STEP}" certificate fingerprint "${ACME_ROOT_CA_ANCHOR}")"
-
-################################################################################
-#
-# Step 4: Download our new certificates from the ACME instance
+# Download our new certificates from the ACME instance
 #
 ################################################################################
 [ -v ACME_PASSWORD_FILE ] || ACME_PASSWORD_FILE="/.acme.password"
 if [ -f "${ACME_PASSWORD_FILE}" ] ; then
-
-	FQDN="$(/usr/bin/hostname -f)"
-	IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
-
-	# Fully-Qualified Service Name
-	FQSN=""
-
-	SAN=()
-
-	# ACME_SERVICE_NAME is the "consumable" service, while
-	# SERVICE is the (possibly headless) default service
-	# associated to a pod. They *may* be the same but
-	# aren't required to be. Thus, we check to see if they're
-	# the same, to avoid adding duplicate values
-	[ -v ACME_SERVICE_NAME ] || ACME_SERVICE_NAME="${SERVICE}"
-	if [ "${ACME_SERVICE_NAME}" != "${SERVICE}" ] ; then
-		if [ -n "${NAMESPACE}" ] ; then
-			if [ -n "${CLUSTER_DOMAIN}" ] ; then
-				[ -n "${FQSN}" ] || FQSN="${ACME_SERVICE_NAME}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-				SAN+=(--san "${FQSN}")
-			fi
-			SAN+=(--san "${ACME_SERVICE_NAME}.${NAMESPACE}")
-		fi
-		SAN+=(--san "${ACME_SERVICE_NAME}")
+	################################################################################
+	#
+	# Initialize the ACME client
+	#
+	################################################################################
+	if "${STEP}" ca health &>/dev/null ; then
+		say "✅ Step CA client already initialized!"
+	else
+		say "👉 Initializing the Step CA Acme Client"
+		"${STEP}" ca bootstrap -f \
+			--ca-url "${ACME_URL}" \
+			--fingerprint "$("${STEP}" certificate fingerprint "${ACME_ROOT_CA_ANCHOR}")"
+		say "\t✅ Done!"
 	fi
-
-	if [ -n "${SERVICE}" ] ; then
-		if [ -n "${NAMESPACE}" ] ; then
-			if [ -n "${CLUSTER_DOMAIN}" ] ; then
-				[ -n "${FQSN}" ] || FQSN="${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-				SAN+=(
-					--san "${POD}.${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-					--san "${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-				)
-			fi
-			SAN+=(
-				--san "${POD}.${SERVICE}.${NAMESPACE}"
-				--san "${SERVICE}.${NAMESPACE}"
-			)
-		fi
-		SAN+=(
-			--san "${POD}.${SERVICE}"
-			--san "${SERVICE}"
-		)
-	fi
-
-	# The least specific values
-	SAN+=(
-		--san "${POD}"
-		--san "localhost.localdomain"
-		--san "localhost"
-	)
-
-	[ -d "${SSL_DIR}" ] || mkdir -p "${SSL_DIR}" || fail "Failed to create the SSL certificate directory [${SSL_DIR}]"
 
 	# This array will contain the list of (absolute) paths for all
 	# files whose ownership and permissions will be set to the most
 	# restrictive of all: only readable by the owner
 	SECURE_FILES=()
 
-	if [ -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
-		[ -n "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The variable ACME_KEYSTORE_PASSWORD_FILE may not be empty"
-		[ -s "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The password file [${ACME_KEYSTORE_PASSWORD_FILE}] may not be empty"
-	else
-		# We weren't given a password file to use, so use the default value
-		ACME_KEYSTORE_PASSWORD_FILE="${SSL_DIR}/keystore.pass"
-		SECURE_FILES+="${ACME_KEYSTORE_PASSWORD_FILE}"
+	if "${GENERATE_NEW_CERTIFICATES}" ; then
+		FQDN="$(/usr/bin/hostname -f)"
+		IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
 
-		# Allow the use of ACME_KEYSTORE_PASSWORD to set the password. This isn't
-		# particularly secure, but it may be required in some instances where the
-		# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
-		if [ -v ACM_KEYSTORE_PASSWORD ] ; then
-			[ -n "${ACME_KEYSTORE_PASSWORD}" ] || fail "The variable ACM_KEYSTORE_PASSWORD may not be empty"
-			echo -n "${ACME_KEYSTORE_PASSWORD}" > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render the password file at [${ACME_KEYSTORE_PASSWORD_FILE}] with the password given in ACME_KEYSTORE_PASSWORD"
+		# Fully-Qualified Service Name
+		FQSN=""
+
+		SAN=()
+
+		# ACME_SERVICE_NAME is the "consumable" service, while
+		# SERVICE is the (possibly headless) default service
+		# associated to a pod. They *may* be the same but
+		# aren't required to be. Thus, we check to see if they're
+		# the same, to avoid adding duplicate values
+		[ -v ACME_SERVICE_NAME ] || ACME_SERVICE_NAME="${SERVICE}"
+		if [ "${ACME_SERVICE_NAME}" != "${SERVICE}" ] ; then
+			if [ -n "${NAMESPACE}" ] ; then
+				if [ -n "${CLUSTER_DOMAIN}" ] ; then
+					[ -n "${FQSN}" ] || FQSN="${ACME_SERVICE_NAME}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
+					SAN+=(--san "${FQSN}")
+				fi
+				SAN+=(--san "${ACME_SERVICE_NAME}.${NAMESPACE}")
+			fi
+			SAN+=(--san "${ACME_SERVICE_NAME}")
+
+			SVC_VAR="${ACME_SERVICE_NAME^^}_SERVICE_HOST"
+			if [ -v "${SVC_VAR}" ] ; then
+				SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=(--san "${SVC_IP}")
+			fi
+		fi
+
+		if [ -n "${SERVICE}" ] ; then
+			if [ -n "${NAMESPACE}" ] ; then
+				if [ -n "${CLUSTER_DOMAIN}" ] ; then
+					[ -n "${FQSN}" ] || FQSN="${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
+					SAN+=(
+						--san "${POD}.${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
+						--san "${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
+					)
+				fi
+				SAN+=(
+					--san "${POD}.${SERVICE}.${NAMESPACE}"
+					--san "${SERVICE}.${NAMESPACE}"
+				)
+			fi
+			SAN+=(
+				--san "${POD}.${SERVICE}"
+				--san "${SERVICE}"
+			)
+
+			SVC_VAR="${SERVICE^^}_SERVICE_HOST"
+			if [ -v "${SVC_VAR}" ] ; then
+				SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=(--san "${SVC_IP}")
+			fi
+		fi
+
+		if [ -v POD_IP ] ; then
+			POD_IP="$(validate_ip "${POD_IP}")" && [ "${POD_IP}" != "127.0.01" ] && SAN+=(--san "${POD_IP}")
+		fi
+
+		# TODO: Use the ${SERVICE_NAME}_SERVICE_HOST as the service IP
+
+		# The least specific values
+		SAN+=(
+			--san "${POD}"
+			--san "localhost.localdomain"
+			--san "localhost"
+		)
+
+		[ -d "${SSL_DIR}" ] || mkdir -p "${SSL_DIR}" || fail "Failed to create the SSL certificate directory [${SSL_DIR}]"
+
+		if [ -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
+			[ -n "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The variable ACME_KEYSTORE_PASSWORD_FILE may not be empty"
+			[ -s "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The password file [${ACME_KEYSTORE_PASSWORD_FILE}] may not be empty"
 		else
-			# We weren't given a password, so just render a random one
-			render_password > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render a new password into [${ACME_KEYSTORE_PASSWORD_FILE}]"
+			# We weren't given a password file to use, so use the default value
+			ACME_KEYSTORE_PASSWORD_FILE="${SSL_DIR}/keystore.pass"
+			SECURE_FILES+="${ACME_KEYSTORE_PASSWORD_FILE}"
+
+			# Allow the use of ACME_KEYSTORE_PASSWORD to set the password. This isn't
+			# particularly secure, but it may be required in some instances where the
+			# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
+			if [ -v ACM_KEYSTORE_PASSWORD ] ; then
+				[ -n "${ACME_KEYSTORE_PASSWORD}" ] || fail "The variable ACM_KEYSTORE_PASSWORD may not be empty"
+				echo -n "${ACME_KEYSTORE_PASSWORD}" > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render the password file at [${ACME_KEYSTORE_PASSWORD_FILE}] with the password given in ACME_KEYSTORE_PASSWORD"
+			else
+				# We weren't given a password, so just render a random one
+				render_password > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render a new password into [${ACME_KEYSTORE_PASSWORD_FILE}]"
+			fi
+		fi
+
+		say "👉 Rendering a new certificate for this pod's use"
+		"${STEP}" ca certificate \
+			"${FQSN:-${FQDN}}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
+			"${SAN[@]}" \
+			-f \
+			--size 4096 \
+			--kty RSA \
+			--provisioner-password-file "${ACME_PASSWORD_FILE}" \
+			--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
+		say "👉 Removing extra stuff from the certificate..."
+		/usr/bin/sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${SSL_DIR}/cert.pem"
+		say "\t✅ Certificate ready!"
+
+		say "👉 Creating an encrypted version of the key..."
+		"${OPENSSL}" rsa -aes256 \
+			-in "${SSL_DIR}/cert.key" \
+			-out "${SSL_DIR}/cert.key.enc" \
+			-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
+		SECURE_FILES+=("${SSL_DIR}/cert.key")
+		say "\t✅ Encrypted key ready!"
+
+		say "👉 Copying the root and intermediate CAs into the target directory..."
+		/usr/bin/cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
+		/usr/bin/cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
+		cat \
+			"${ACME_INT_CA_ANCHOR}" \
+			"${ACME_ROOT_CA_ANCHOR}" \
+			> "${SSL_DIR}/ca-chain.pem"
+		say "\t✅ Done!"
+	else
+		say "✅ Existing certificates and keys are still valid, will not generate new ones!"
+		if [ ! -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
+			ACME_KEYSTORE_PASSWORD_FILE="${SSL_DIR}/keystore.pass"
+			SECURE_FILES+=("${ACME_KEYSTORE_PASSWORD_FILE}")
 		fi
 	fi
-
-	say "👉 Rendering a new certificate for this pod's use"
-	"${STEP}" ca certificate \
-		"${FQSN:-${FQDN}}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
-		"${SAN[@]}" \
-		-f \
-		--size 4096 \
-		--kty RSA \
-		--provisioner-password-file "${ACME_PASSWORD_FILE}" \
-		--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
-	say "\t✅ Certificate ready!"
-
-	say "👉 Creating an encrypted version of the key..."
-	"${OPENSSL}" rsa -aes256 \
-		-in "${SSL_DIR}/cert.key" \
-		-out "${SSL_DIR}/cert.key.enc" \
-		-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
-	SECURE_FILES+=("${SSL_DIR}/cert.key")
-	say "\t✅ Encrypted key ready!"
-
-	say "👉 Copying the root and intermediate CAs into the target directory..."
-	/usr/bin/cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
-	/usr/bin/cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
-	cat \
-		"${ACME_INT_CA_ANCHOR}" \
-		"${ACME_ROOT_CA_ANCHOR}" \
-		> "${SSL_DIR}/ca-chain.pem"
-	say "\t✅ Done!"
 
 	say "👉 Rendering the certificate files for HAProxy..."
 	cat \
@@ -428,32 +496,68 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	SECURE_FILES+=("${SSL_DIR}/haproxy-cert.pem")
 	say "\t✅ Done!"
 
-	say "👉 Rendering a PKCS12 Keystore with the new certificate & key..."
-	"${OPENSSL}" pkcs12 \
-		-export \
-		-in "${SSL_DIR}/cert.pem" \
-		-inkey "${SSL_DIR}/cert.key" \
-		-certfile "${SSL_DIR}/ca-chain.pem" \
-		-passin file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2) \
-		-name "acme" \
-		-out "${SSL_DIR}/keystore.pkcs12" \
-		-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
-	say "\t✅ Ready!"
-
 	# Find the Java keytool, if it's installed
 	KEYTOOL="$(type -P keytool 2>/dev/null)" || true
 	if [ -n "${KEYTOOL}" ] && [ -f "${KEYTOOL}" ] && [ -r "${KEYTOOL}" ] && [ -x "${KEYTOOL}" ] ; then
+		say "👉 Rendering a PKCS12 Keystore with the new certificate & key..."
+
+		# First, create the base keystore
+		PKCS12="${SSL_DIR}/keystore.pkcs12"
+		"${OPENSSL}" pkcs12 \
+			-export \
+			-in "${SSL_DIR}/cert.pem" \
+			-inkey "${SSL_DIR}/cert.key" \
+			-passin file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2) \
+			-name "acme" \
+			-out "${PKCS12}" \
+			-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
+
+		# Then, append the additional CAs into the newly-created keystore
+		for CERT in ca-int.pem ca-root.pem ; do
+			say "\t👉 Adding ${CERT}..."
+			"${KEYTOOL}" \
+				-importcert \
+				-noprompt \
+				-keystore "${PKCS12}" \
+				-storepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
+				-storetype "PKCS12" \
+				-alias "acme-${CERT%.*}" \
+				-file "${SSL_DIR}/${CERT}"
+		done
+		say "\t✅ Ready!"
+
+		# Finally, if other keystore types are required, use them
 		for STORETYPE in jks jceks ; do
 			is_supported "${STORETYPE^^}" || continue
 			say "👉 Creating a ${STORETYPE^^} Java Keystore with the new certificate & key..." 
+			STOREFILE="${SSL_DIR}/keystore.${STORETYPE}"
+			STOREPASS="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
+			rm -f "${STOREFILE}" &>/dev/null || true
+
+			# First, copy only the key and cert we want
 			"${KEYTOOL}" \
 				-importkeystore \
-				-srckeystore "${SSL_DIR}/keystore.pkcs12"  \
-				-srcstorepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"  \
+				-srcalias "acme" \
+				-srckeystore "${PKCS12}" \
+				-srcstorepass "${STOREPASS}" \
 				-srcstoretype PKCS12 \
-				-destkeystore "${SSL_DIR}/keystore.${STORETYPE}" \
-				-deststorepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
+				-destkeystore "${STOREFILE}" \
+				-deststorepass "${STOREPASS}" \
+				-destkeypass "${STOREPASS}" \
 				-deststoretype "${STORETYPE}"
+
+			# Then, append the additional CAs into the newly-created keystore
+			for CERT in ca-int.pem ca-root.pem ; do
+				say "\t👉 Adding ${CERT}..."
+				"${KEYTOOL}" \
+					-importcert \
+					-noprompt \
+					-keystore "${STOREFILE}" \
+					-storepass "${STOREPASS}" \
+					-storetype "${STORETYPE}" \
+					-alias "acme-${CERT%.*}" \
+					-file "${SSL_DIR}/${CERT}"
+			done
 			say "\t✅ Ready!"
 		done
 	fi
