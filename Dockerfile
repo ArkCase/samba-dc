@@ -88,7 +88,8 @@ RUN yum -y install \
 #
 # Declare some important volumes
 #
-VOLUME /config
+VOLUME /app/conf
+VOLUME /app/init
 VOLUME /vpn
 VOLUME /var/log/samba
 VOLUME /var/lib/samba
