@@ -276,19 +276,19 @@ configure_smb() {
 	mv "${SMB_CONF}" "${SMB_CONF}.orig"
 	if [ "${JOIN,,}" == "true" ]; then
 		if [ "${JOINSITE}" == "NONE" ]; then
-			samba-tool domain join "${LDOMAIN}" DC -U"${REALM}\\administrator" --password="${DOMAINPASS}" --dns-backend=SAMBA_INTERNAL
+			samba-tool domain join "${LDOMAIN}" DC -U"${REALM}\\administrator" --password="${DOMAINPASS}" --dns-backend=SAMBA_INTERNAL || return 1
 		else
-			samba-tool domain join "${LDOMAIN}" DC -U"${REALM}\\administrator" --password="${DOMAINPASS}" --dns-backend=SAMBA_INTERNAL --site="${JOINSITE}"
+			samba-tool domain join "${LDOMAIN}" DC -U"${REALM}\\administrator" --password="${DOMAINPASS}" --dns-backend=SAMBA_INTERNAL --site="${JOINSITE}" || return 1
 		fi
 	else
 		PROVISION_FLAGS=()
 		[ -n "${HOSTIP_OPTION}" ] && PROVISION_FLAGS+=("${HOSTIP_OPTION}")
-		samba-tool domain provision --use-rfc2307 --domain="${REALM}" --realm="${UDOMAIN}" --server-role=dc --dns-backend=SAMBA_INTERNAL --adminpass="${DOMAINPASS}" "${PROVISION_FLAGS[@]}"
+		samba-tool domain provision --use-rfc2307 --domain="${REALM}" --realm="${UDOMAIN}" --server-role=dc --dns-backend=SAMBA_INTERNAL --adminpass="${DOMAINPASS}" "${PROVISION_FLAGS[@]}" || return 1
 		if [[ ${NOCOMPLEXITY,,} == "true" ]]; then
-			samba-tool domain passwordsettings set --complexity=off
-			samba-tool domain passwordsettings set --history-length=0
-			samba-tool domain passwordsettings set --min-pwd-age=0
-			samba-tool domain passwordsettings set --max-pwd-age=0
+			samba-tool domain passwordsettings set --complexity=off || return 1
+			samba-tool domain passwordsettings set --history-length=0 || return 1
+			samba-tool domain passwordsettings set --min-pwd-age=0 || return 1
+			samba-tool domain passwordsettings set --max-pwd-age=0 || return 1
 		fi
 	fi
 	sed -i "/\[global\]/a \
@@ -333,7 +333,7 @@ configure_smb() {
 
 configure_k8s() {
 	local DNS_IP=""
-	
+
 	[ -v KUBERNETES_SERVICE_HOST ] || return 1
 
 	# We've been explicitly told who our forwarder is, so we don't use it
