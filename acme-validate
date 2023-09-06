@@ -1,0 +1,62 @@
+#!/bin/bash
+
+set -euo pipefail
+
+timestamp() {
+	date -Ins -u
+}
+
+say() {
+	echo -e "$(timestamp): ${@}"
+}
+
+err() {
+	say "❌ ERROR: ${@}" 1>&2
+}
+
+fail() {
+	say "❌ ${@}" 1>&2
+	exit ${EXIT_CODE:-1}
+}
+
+[ -v SSL_DIR ] || SSL_DIR="/.ssl"
+
+OPENSSL="$(type -P openssl)" || fail "OpenSSL is not installed, can't continue"
+SHA256SUM="$(type -P sha256sum)" || fail "The sha256sum executable is not installed, can't continue"
+
+say "👉 Validating the existing certificates and keys"
+[ -d "${SSL_DIR}" ] || fail "The SSL directory [${SSL_DIR}] does not exist"
+
+PWFILE="${SSL_DIR}/keystore.pass"
+[ -v ACME_KEYSTORE_PASSWORD_FILE ] && PWFILE="${ACME_KEYSTORE_PASSWORD_FILE}"
+[ -n "${PWFILE}" ] || fail "The password file speficication cannot be empty"
+[ -s "${PWFILE}" ] || fail "The password file must be a non-empty file"
+
+# Check that all the files are there
+BASE_FILES=(
+	"${SSL_DIR}/ca-root.pem"
+	"${SSL_DIR}/ca-int.pem"
+	"${SSL_DIR}/cert.key.enc"
+	"${SSL_DIR}/cert.pem"
+	"${PWFILE}"
+)
+for f in "${BASE_FILES[@]}" ; do
+	[ -e "${f}" ] || fail "The file [${f}] is missing"
+	[ -s "${f}" ] || fail "The file [${f}] is either not a file, or of length 0"
+	[ -r "${f}" ] || fail "The file [${f}] is not readable by the user $(id -un)"
+done
+
+# Check that the key is valid, and that the password decrypts it
+"${OPENSSL}" rsa -check -noout -in "${SSL_DIR}/cert.key.enc" -passin file:"${PWFILE}" &>/dev/null || fail "The private key is not valid, or could not be decrypted with the stored password"
+
+# Check that the private and public keys match
+read PRIVATE rest < <("${OPENSSL}" rsa -modulus -noout -in "${SSL_DIR}/cert.key.enc" -passin file:"${PWFILE}" | "${SHA256SUM}")
+read PUBLIC rest < <("${OPENSSL}" x509 -modulus -noout -in "${SSL_DIR}/cert.pem" | "${SHA256SUM}")
+[ "${PUBLIC}" == "${PRIVATE}" ] || fail "The modulus for the private and public keys did not match."
+
+# Is the int cert signed by the root pem?
+"${OPENSSL}" verify -CAfile "${SSL_DIR}/ca-root.pem" "${SSL_DIR}/ca-int.pem" &>/dev/null || fail "The intermediate CA is not signed by the root CA"
+"${OPENSSL}" verify -CAfile <(cat "${SSL_DIR}/ca-int.pem" "${SSL_DIR}/ca-root.pem") "${SSL_DIR}/cert.pem" &>/dev/null || fail "The certificate isn't signed by the intermediate CA"
+
+say "✅ Certificate validation at [${SSL_DIR}] complete!"
+exit 0

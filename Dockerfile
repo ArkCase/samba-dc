@@ -100,8 +100,8 @@ EXPOSE 636
 # Set up script and run
 #
 COPY --chown=root:root entrypoint test-ready.sh test-live.sh samba-directory-templates.tar.gz /
-COPY --chown=root:root acme-init /usr/local/bin/
-RUN chmod 755 /entrypoint /test-ready.sh /test-live.sh /usr/local/bin/acme-init
+COPY --chown=root:root acme-init acme-validate /usr/local/bin/
+RUN chmod 755 /entrypoint /test-ready.sh /test-live.sh /usr/local/bin/acme-init /usr/local/bin/acme-validate
 
 # This is required by acme-init. It's ok to set it to root for this container
 ENV ACM_GROUP="root"

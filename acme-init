@@ -170,6 +170,11 @@ download_chain() {
 	return ${RC}
 }
 
+if "$(to_boolean "${ACME_DISABLE:-false}")" ; then
+	say "✅ ACME Processing is disabled by configuration (ACME_DISABLE == ${ACME_DISABLE})"
+	exit 0
+fi
+
 [ -v ACM_GROUP ] || fail "The ACM_GROUP environment variable is REQUIRED"
 [ -v SSL_DIR ] || SSL_DIR="/.ssl"
 [ -v SSL_TRUSTS_DIR ] || SSL_TRUSTS_DIR="/.trusts"
