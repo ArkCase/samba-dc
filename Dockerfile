@@ -4,7 +4,7 @@
 ARG PUBLIC_REGISTRY="public.ecr.aws"
 ARG ARCH="x86_64"
 ARG OS="linux"
-ARG VER="4.14.5-10"
+ARG VER="4.14.5"
 ARG PKG="samba"
 
 ARG STEP_VER="0.24.4"
