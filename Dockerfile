@@ -2,25 +2,29 @@
 # Basic Parameters
 #
 ARG PUBLIC_REGISTRY="public.ecr.aws"
-ARG BASE_REPO="rockylinux"
-ARG BASE_TAG="8.5"
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG VER="4.14.5-10"
-ARG BLD="01"
 ARG PKG="samba"
-ARG SRC_BASE_REGISTRY="${PUBLIC_REGISTRY}"
-ARG SRC_BASE_REPO="arkcase/samba-rpmbuild"
+
 ARG STEP_VER="0.24.4"
 ARG STEP_SRC="https://dl.step.sm/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli_${STEP_VER}_amd64.rpm"
 
-FROM "${SRC_BASE_REGISTRY}/${SRC_BASE_REPO}:${VER}" as src
+ARG SAMBA_REGISTRY="${PUBLIC_REGISTRY}"
+ARG SAMBA_REPO="arkcase/samba-rpmbuild"
+ARG SAMBA_IMG="${SAMBA_REGISTRY}/${SAMBA_REPO}:${VER}"
+
+ARG BASE_REPO="rockylinux"
+ARG BASE_VER="8.5"
+ARG BASE_IMG="${BASE_REPO}:${BASE_VER}"
+
+FROM "${SAMBA_IMG}" as src
 
 #
 # For actual execution
 #
-# FROM "${PUBLIC_REGISTRY}/${BASE_REPO}:${BASE_TAG}"
-FROM "${BASE_REPO}:${BASE_TAG}"
+# FROM "${PUBLIC_REGISTRY}/${BASE_REPO}:${BASE_VER}"
+FROM "${BASE_IMG}"
 
 #
 # Basic Parameters
