@@ -48,6 +48,18 @@ done
 unset D2 D3
 
 ${DEBUG} && set -x
+OUT="$(supervisorctl status samba 2>&1)"
+RC=${?}
+${DEBUG} && set +x
+if [ ${RC} -ne 0 ] ; then
+	echo -e "Failed to verify the Samba process status"
+	echo -e "${OUT}"
+	exit 1
+fi
+echo -e "SupervisorD reports the Samba process as running"
+${DEBUG} && echo -e "${OUT}"
+
+${DEBUG} && set -x
 OUT="$(openssl s_client -connect localhost:636 -showcerts </dev/null 2>&1)"
 RC=${?}
 ${DEBUG} && set +x
