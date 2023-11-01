@@ -97,11 +97,15 @@ is_initialized() {
 	# Domain configurations
 	#
 	CANDIDATES+=("private/sam.ldb.d/metadata.tdb")
-	CANDIDATES+=("private/sam.ldb.d/CN=CONFIGURATION,${DC}.ldb")
-	CANDIDATES+=("private/sam.ldb.d/CN=SCHEMA,CN=CONFIGURATION,${DC}.ldb")
-	CANDIDATES+=("private/sam.ldb.d/DC=DOMAINDNSZONES,${DC}.ldb")
-	CANDIDATES+=("private/sam.ldb.d/DC=FORESTDNSZONES,${DC}.ldb")
-	CANDIDATES+=("private/sam.ldb.d/${DC}.ldb")
+
+	#
+	# Temporarily turned off due to behavioral change on the O/S
+	#
+	# CANDIDATES+=("private/sam.ldb.d/CN=CONFIGURATION,${DC}.ldb")
+	# CANDIDATES+=("private/sam.ldb.d/CN=SCHEMA,CN=CONFIGURATION,${DC}.ldb")
+	# CANDIDATES+=("private/sam.ldb.d/DC=DOMAINDNSZONES,${DC}.ldb")
+	# CANDIDATES+=("private/sam.ldb.d/DC=FORESTDNSZONES,${DC}.ldb")
+	# CANDIDATES+=("private/sam.ldb.d/${DC}.ldb")
 
 	#
 	# Check for the created databases
