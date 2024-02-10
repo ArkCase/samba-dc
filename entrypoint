@@ -370,6 +370,7 @@ fi
 #
 cat <<-EOF > "${SUPERVISOR_SMB_CONF}"
 [program:samba]
+user = root
 command = /usr/sbin/samba -i
 EOF
 
