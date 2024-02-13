@@ -21,6 +21,7 @@ ${DEBUG} && set -x
 [ -v BASE_DIR ] || BASE_DIR="/app"
 [ -v INIT_DIR ] || INIT_DIR="${BASE_DIR}/init"
 [ -v CONF_DIR ] || CONF_DIR="${BASE_DIR}/conf"
+[ -v BOOT_DIR ] || BOOT_DIR="${BASE_DIR}/boot"
 
 SUPERVISOR_SMB_CONF="/etc/supervisord.d/samba-dc.ini"
 SUPERVISOR_VPN_CONF="/etc/supervisord.d/samba-vpn.ini"
@@ -363,6 +364,42 @@ if ! configure_smb ; then
 fi
 
 #
+# Download and deploy the required certificates
+#
+[ -v SSL_DIR ] || SSL_DIR="/.ssl"
+acme-init
+
+# We perform this validation b/c ACME processing may be turned off
+if acme-validate &>/dev/null ; then
+	# Now deploy the generated files
+	LOCAL_CERT_HOME="${SAMBA_PRIVATE}/tls"
+	cp -vf "${SSL_DIR}/ca-chain.pem" "${LOCAL_CERT_HOME}/ca.pem"
+	cp -vf "${SSL_DIR}/cert.pem" "${LOCAL_CERT_HOME}/cert.pem"
+	chmod ug=r,o= "${LOCAL_CERT_HOME}"/*.pem
+
+	# This file has to have stricter permissions
+	cp -vf "${SSL_DIR}/cert.key" "${LOCAL_CERT_HOME}/key.pem"
+	chmod u=rw,go= "${LOCAL_CERT_HOME}/key.pem"
+fi
+
+#
+# Run the boot preparation scripts
+#
+if [ -d "${BOOT_DIR}" ] ; then
+	say "Launching boot scripts from [${BOOT_DIR}]..."
+	(
+		cd "${BOOT_DIR}" || exit 1
+		while read script ; do
+			say "\tLaunching the boot script [${script}]..."
+			if ! "$(readlink -f "${script}")" ; then
+				say "\tError executing the boot script [${script}] (rc=${?})"
+				exit 1
+			fi
+		done < <(find . -mindepth 1 -maxdepth 1 -type f -perm /u+x | sort | sed -e 's;^./;;g')
+	)
+fi
+
+#
 # Set up supervisor
 #
 # We don't care if this is an old or new container ... we do it anyway to ensure
@@ -382,26 +419,6 @@ if [ "${MULTISITE,,}" = "true" ] ; then
 	EOF
 else
 	rm -f "${SUPERVISOR_VPN_CONF}" &>/dev/null
-fi
-
-
-#
-# Download and deploy the required certificates
-#
-[ -v SSL_DIR ] || SSL_DIR="/.ssl"
-acme-init
-
-# We perform this validation b/c ACME processing may be turned off
-if acme-validate &>/dev/null ; then
-	# Now deploy the generated files
-	LOCAL_CERT_HOME="${SAMBA_PRIVATE}/tls"
-	cp -vf "${SSL_DIR}/ca-chain.pem" "${LOCAL_CERT_HOME}/ca.pem"
-	cp -vf "${SSL_DIR}/cert.pem" "${LOCAL_CERT_HOME}/cert.pem"
-	chmod ug=r,o= "${LOCAL_CERT_HOME}"/*.pem
-
-	# This file has to have stricter permissions
-	cp -vf "${SSL_DIR}/cert.key" "${LOCAL_CERT_HOME}/key.pem"
-	chmod u=rw,go= "${LOCAL_CERT_HOME}/key.pem"
 fi
 
 say "Launching Samba (via supervisord)"
