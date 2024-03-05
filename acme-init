@@ -216,7 +216,7 @@ SHA256SUM="$(type -P sha256sum 2>/dev/null)" || fail "sha256sum is not installed
 #
 ################################################################################
 GENERATE_NEW_CERTIFICATES="false"
-acme-validate || GENERATE_NEW_CERTIFICATES="true"
+/usr/local/bin/acme-validate || GENERATE_NEW_CERTIFICATES="true"
 
 if "${GENERATE_NEW_CERTIFICATES}" ; then
 	################################################################################
@@ -446,8 +446,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			# Allow the use of ACME_KEYSTORE_PASSWORD to set the password. This isn't
 			# particularly secure, but it may be required in some instances where the
 			# pod needs to know the password beforehand (i.e. b/c Helm needs to know it)
-			if [ -v ACM_KEYSTORE_PASSWORD ] ; then
-				[ -n "${ACME_KEYSTORE_PASSWORD}" ] || fail "The variable ACM_KEYSTORE_PASSWORD may not be empty"
+			if [ -v ACME_KEYSTORE_PASSWORD ] ; then
+				[ -n "${ACME_KEYSTORE_PASSWORD}" ] || fail "The variable ACME_KEYSTORE_PASSWORD may not be empty"
 				echo -n "${ACME_KEYSTORE_PASSWORD}" > "${ACME_KEYSTORE_PASSWORD_FILE}" || fail "Failed to render the password file at [${ACME_KEYSTORE_PASSWORD_FILE}] with the password given in ACME_KEYSTORE_PASSWORD"
 			else
 				# We weren't given a password, so just render a random one
@@ -479,7 +479,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		say "👉 Copying the root and intermediate CAs into the target directory..."
 		/usr/bin/cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
 		/usr/bin/cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
-		cat \
+		/usr/bin/cat \
 			"${ACME_INT_CA_ANCHOR}" \
 			"${ACME_ROOT_CA_ANCHOR}" \
 			> "${SSL_DIR}/ca-chain.pem"
@@ -493,7 +493,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	fi
 
 	say "👉 Rendering the certificate files for HAProxy..."
-	cat \
+	/usr/bin/cat \
 		"${SSL_DIR}/cert.pem" \
 		"${SSL_DIR}/ca-chain.pem" \
 		"${SSL_DIR}/cert.key" \
@@ -570,8 +570,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	say "👉 Setting tight permissions for the generated data..."
 
 	# By default, owned by root but readable by ACM_GROUP
-	chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
-	chmod -R a=rX "${SSL_DIR}"
+	/usr/bin/chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
+	/usr/bin/chmod -R a=rX "${SSL_DIR}"
 
 	# Secure the most sensitive files so they're only readable
 	# by the user who will be consuming them ... the other files
@@ -580,8 +580,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
 		KEY_OWNER="root"
 		[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}"
-		chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
-		chmod -R u=r,go= "${SECURE_FILES[@]}"
+		/usr/bin/chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
+		/usr/bin/chmod -R u=r,go= "${SECURE_FILES[@]}"
 	fi
 
 	say "\t✅ Done!"
