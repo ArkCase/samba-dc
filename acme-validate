@@ -58,5 +58,21 @@ read PUBLIC rest < <("${OPENSSL}" x509 -modulus -noout -in "${SSL_DIR}/cert.pem"
 "${OPENSSL}" verify -CAfile "${SSL_DIR}/ca-root.pem" "${SSL_DIR}/ca-int.pem" &>/dev/null || fail "The intermediate CA is not signed by the root CA"
 "${OPENSSL}" verify -CAfile <(cat "${SSL_DIR}/ca-int.pem" "${SSL_DIR}/ca-root.pem") "${SSL_DIR}/cert.pem" &>/dev/null || fail "The certificate isn't signed by the intermediate CA"
 
+# Are the int and root certs deployed to the anchor directories?
+[ -v ANCHORS ] || ANCHORS=""
+[ -n "${ANCHORS}" ] || ANCHORS="/etc/pki/ca-trust/source/anchors"
+
+for n in ca-int ca-root ; do
+	MASTER="${SSL_DIR}/${n}.pem"
+	ANCHOR="${ANCHORS}/${n}.crt"
+	[ -f "${MASTER}" ] || fail "The master certificate [${MASTER}] does not exist"
+	[ -f "${ANCHOR}" ] || fail "The anchor certificate [${ANCHOR}] does not exist"
+
+	read A REST < <("${SHA256SUM}" "${MASTER}")
+	read B REST < <("${SHA256SUM}" "${ANCHOR}")
+
+	[ "${A}" == "${B}" ] || fail "The SHA-256 sums for [${MASTER}] and [${ANCHOR}] don't match: [${A}] != [${B}]"
+done
+
 say "✅ Certificate validation at [${SSL_DIR}] complete!"
 exit 0
