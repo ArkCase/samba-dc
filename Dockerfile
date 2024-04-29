@@ -7,7 +7,7 @@ ARG OS="linux"
 ARG VER="4.14.5"
 ARG PKG="samba"
 
-ARG STEP_VER="0.24.4"
+ARG STEP_VER="0.26.1"
 ARG STEP_SRC="https://dl.step.sm/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli_${STEP_VER}_amd64.rpm"
 
 ARG SAMBA_REGISTRY="${PUBLIC_REGISTRY}"
