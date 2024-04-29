@@ -4,26 +4,22 @@
 ARG PUBLIC_REGISTRY="public.ecr.aws"
 ARG ARCH="x86_64"
 ARG OS="linux"
-ARG VER="4.14.5"
+ARG VER="4.18.6"
 ARG PKG="samba"
-
-ARG STEP_VER="0.24.4"
-ARG STEP_SRC="https://dl.step.sm/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli_${STEP_VER}_amd64.rpm"
 
 ARG SAMBA_REGISTRY="${PUBLIC_REGISTRY}"
 ARG SAMBA_REPO="arkcase/samba-rpmbuild"
 ARG SAMBA_IMG="${SAMBA_REGISTRY}/${SAMBA_REPO}:${VER}"
 
-ARG BASE_REPO="rockylinux"
-ARG BASE_VER="8.5"
-ARG BASE_IMG="${BASE_REPO}:${BASE_VER}"
+ARG BASE_REPO="arkcase/base"
+ARG BASE_VER="8"
+ARG BASE_IMG="${PUBLIC_REGISTRY}/${BASE_REPO}:${BASE_VER}"
 
 FROM "${SAMBA_IMG}" as src
 
 #
 # For actual execution
 #
-# FROM "${PUBLIC_REGISTRY}/${BASE_REPO}:${BASE_VER}"
 FROM "${BASE_IMG}"
 
 #
@@ -33,8 +29,6 @@ ARG ARCH
 ARG OS
 ARG VER
 ARG PKG
-ARG STEP_VER
-ARG STEP_SRC
 
 #
 # Some important labels
@@ -83,7 +77,6 @@ RUN yum -y install \
         supervisor \
         telnet \
         which \
-        "${STEP_SRC}" \
     && \
     yum -y clean all && \
     update-alternatives --set python /usr/bin/python3 && \
@@ -105,8 +98,7 @@ EXPOSE 636
 # Set up script and run
 #
 COPY --chown=root:root entrypoint test-ready.sh test-live.sh test-startup.sh samba-directory-templates.tar.gz /
-COPY --chown=root:root acme-init acme-validate /usr/local/bin/
-RUN chmod 755 /entrypoint /test-ready.sh /test-live.sh /test-startup.sh /usr/local/bin/acme-init /usr/local/bin/acme-validate
+RUN chmod 755 /entrypoint /test-ready.sh /test-live.sh /test-startup.sh
 
 # This is required by acme-init. It's ok to set it to root for this container
 ENV ACM_GROUP="root"
