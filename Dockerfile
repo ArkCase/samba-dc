@@ -67,7 +67,7 @@ RUN yum -y install \
         net-tools \
         openssl \
         openldap-clients \
-        openvpn \
+        python3 \
         python3-samba \
         python3-samba-dc \
         python3-pyyaml \
@@ -88,12 +88,12 @@ RUN yum -y install \
     update-alternatives --set python /usr/bin/python3 && \
     rm -rf /rpm /etc/yum.repos.d/arkcase.repo
 
+
 #
 # Declare some important volumes
 #
 VOLUME /app/conf
 VOLUME /app/init
-VOLUME /vpn
 VOLUME /var/log/samba
 VOLUME /var/lib/samba
 
