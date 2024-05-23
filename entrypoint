@@ -211,7 +211,7 @@ check_krb_conf() {
 	[ -f "${EXT_KRB_CONF}" ] || return 1
 
 	local EXT_DOMAIN="$(ini_get_value "${EXT_KRB_CONF}" "libdefaults" "default_realm")"
-	[ "${EXT_DOMAIN^^}" = "${DOMAIN^^}" ] || { cfg_mismatch "kerberos realm" "${EXT_DOMAIN}" "${DOMAIN}" ; exit 1 ; }
+	[ "${EXT_DOMAIN^^}" == "${DOMAIN^^}" ] || { cfg_mismatch "kerberos realm" "${EXT_DOMAIN}" "${DOMAIN}" ; exit 1 ; }
 
 	return 0
 }
@@ -220,10 +220,10 @@ check_smb_conf() {
 	[ -f "${EXT_SMB_CONF}" ] || return 1
 
 	local EXT_REALM="$(ini_get_value "${EXT_SMB_CONF}" "global" "workgroup")"
-	[ "${EXT_REALM^^}" = "${REALM^^}" ] || { cfg_mismatch "realm" "${EXT_REALM}" "${REALM}" ; exit 1 ; }
+	[ "${EXT_REALM^^}" == "${REALM^^}" ] || { cfg_mismatch "realm" "${EXT_REALM}" "${REALM}" ; exit 1 ; }
 
 	local EXT_DOMAIN="$(ini_get_value "${EXT_SMB_CONF}" "global" "realm")"
-	[ "${EXT_DOMAIN^^}" = "${DOMAIN^^}" ] || { cfg_mismatch "domain" "${EXT_DOMAIN}" "${DOMAIN}" ; exit 1 ; }
+	[ "${EXT_DOMAIN^^}" == "${DOMAIN^^}" ] || { cfg_mismatch "domain" "${EXT_DOMAIN}" "${DOMAIN}" ; exit 1 ; }
 
 	return 0
 }
@@ -296,6 +296,9 @@ configure_smb() {
 			samba-tool domain passwordsettings set --max-pwd-age=0 || return 1
 		fi
 	fi
+	local SED="$(cat <<-EOF
+	EOF
+	)"
 	sed -i "/\[global\]/a \
 		\\\tidmap_ldb:use rfc2307 = yes\\n\
 		wins support = yes\\n\

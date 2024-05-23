@@ -17,7 +17,7 @@ if [ ${RC} -ne 0 ] ; then
 	echo -e "${OUT}"
 	exit 1
 fi
-if [ -n "${OUT}" ] ; then
+if [ -z "${OUT}" ] ; then
 	echo -e "No Samba ldap_server processes were found"
 	exit 1
 fi
