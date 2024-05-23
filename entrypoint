@@ -296,9 +296,6 @@ configure_smb() {
 			samba-tool domain passwordsettings set --max-pwd-age=0 || return 1
 		fi
 	fi
-	local SED="$(cat <<-EOF
-	EOF
-	)"
 	sed -i "/\[global\]/a \
 		\\\tidmap_ldb:use rfc2307 = yes\\n\
 		wins support = yes\\n\
