@@ -80,7 +80,6 @@ RUN yum -y install \
         samba-winbind-krb5-locator \
         samba-winexe \
         sssd-krb5 \
-        supervisor \
         telnet \
         which \
         "${STEP_SRC}" \

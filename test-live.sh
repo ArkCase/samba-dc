@@ -9,7 +9,7 @@ case "${DEBUG,,}" in
 esac
 
 ${DEBUG} && set -x
-OUT="$(supervisorctl status samba 2>&1)"
+OUT="$(samba-tool processes --name=ldap_server 2>&1)"
 RC=${?}
 ${DEBUG} && set +x
 if [ ${RC} -ne 0 ] ; then
@@ -17,7 +17,10 @@ if [ ${RC} -ne 0 ] ; then
 	echo -e "${OUT}"
 	exit 1
 fi
-echo -e "SupervisorD reports the Samba process as running"
+if [ -n "${OUT}" ] ; then
+	echo -e "No Samba ldap_server processes were found"
+	exit 1
+fi
 ${DEBUG} && echo -e "${OUT}"
 
 echo -e "The instance is live"
