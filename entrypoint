@@ -404,4 +404,4 @@ if [ -d "${BOOT_DIR}" ] ; then
 fi
 
 say "Launching Samba"
-exec /usr/bin/samba -F
+exec /usr/sbin/samba -F
