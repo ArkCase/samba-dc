@@ -2,27 +2,32 @@
 
 set -euo pipefail
 
-timestamp() {
+timestamp()
+{
 	date -Ins -u
 }
 
-say() {
+say()
+{
 	echo -e "$(timestamp): ${@}"
 }
 
-err() {
-	say "❌ ERROR: ${@}" 1>&2
+err()
+{
+	say "❌ ${@}" 1>&2
 }
 
-fail() {
-	say "❌ ${@}" 1>&2
+fail()
+{
+	err "${@}"
 	exit ${EXIT_CODE:-1}
 }
 
-[ -v SSL_DIR ] || SSL_DIR="/.ssl"
+[ -v SSL_DIR ] || SSL_DIR=""
+[ -n "${SSL_DIR}" ] || SSL_DIR="/.ssl"
 
-OPENSSL="$(type -P openssl)" || fail "OpenSSL is not installed, can't continue"
-SHA256SUM="$(type -P sha256sum)" || fail "The sha256sum executable is not installed, can't continue"
+type -P openssl &>/dev/null || fail "OpenSSL is not installed, can't continue"
+type -P sha256sum &>/dev/null || fail "The sha256sum executable is not installed, can't continue"
 
 say "👉 Validating the existing certificates and keys"
 [ -d "${SSL_DIR}" ] || fail "The SSL directory [${SSL_DIR}] does not exist"
@@ -47,16 +52,16 @@ for f in "${BASE_FILES[@]}" ; do
 done
 
 # Check that the key is valid, and that the password decrypts it
-"${OPENSSL}" rsa -check -noout -in "${SSL_DIR}/cert.key.enc" -passin file:"${PWFILE}" &>/dev/null || fail "The private key is not valid, or could not be decrypted with the stored password"
+openssl rsa -check -noout -in "${SSL_DIR}/cert.key.enc" -passin file:"${PWFILE}" &>/dev/null || fail "The private key is not valid, or could not be decrypted with the stored password"
 
 # Check that the private and public keys match
-read PRIVATE rest < <("${OPENSSL}" rsa -modulus -noout -in "${SSL_DIR}/cert.key.enc" -passin file:"${PWFILE}" | "${SHA256SUM}")
-read PUBLIC rest < <("${OPENSSL}" x509 -modulus -noout -in "${SSL_DIR}/cert.pem" | "${SHA256SUM}")
+read PRIVATE rest < <(openssl rsa -modulus -noout -in "${SSL_DIR}/cert.key.enc" -passin file:"${PWFILE}" | sha256sum)
+read PUBLIC rest < <(openssl x509 -modulus -noout -in "${SSL_DIR}/cert.pem" | sha256sum)
 [ "${PUBLIC}" == "${PRIVATE}" ] || fail "The modulus for the private and public keys did not match."
 
 # Is the int cert signed by the root pem?
-"${OPENSSL}" verify -CAfile "${SSL_DIR}/ca-root.pem" "${SSL_DIR}/ca-int.pem" &>/dev/null || fail "The intermediate CA is not signed by the root CA"
-"${OPENSSL}" verify -CAfile <(cat "${SSL_DIR}/ca-int.pem" "${SSL_DIR}/ca-root.pem") "${SSL_DIR}/cert.pem" &>/dev/null || fail "The certificate isn't signed by the intermediate CA"
+openssl verify -CAfile "${SSL_DIR}/ca-root.pem" "${SSL_DIR}/ca-int.pem" &>/dev/null || fail "The intermediate CA is not signed by the root CA"
+openssl verify -CAfile <(cat "${SSL_DIR}/ca-int.pem" "${SSL_DIR}/ca-root.pem") "${SSL_DIR}/cert.pem" &>/dev/null || fail "The certificate isn't signed by the intermediate CA"
 
 # Are the int and root certs deployed to the anchor directories?
 [ -v ANCHORS ] || ANCHORS=""
@@ -68,8 +73,8 @@ for n in ca-int ca-root ; do
 	[ -f "${MASTER}" ] || fail "The master certificate [${MASTER}] does not exist"
 	[ -f "${ANCHOR}" ] || fail "The anchor certificate [${ANCHOR}] does not exist"
 
-	read A REST < <("${SHA256SUM}" "${MASTER}")
-	read B REST < <("${SHA256SUM}" "${ANCHOR}")
+	read A REST < <(sha256sum "${MASTER}")
+	read B REST < <(sha256sum "${ANCHOR}")
 
 	[ "${A}" == "${B}" ] || fail "The SHA-256 sums for [${MASTER}] and [${ANCHOR}] don't match: [${A}] != [${B}]"
 done

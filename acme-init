@@ -1,38 +1,49 @@
 #!/bin/bash
-[ "$(/usr/bin/id -u)" -eq 0 ] || exec /usr/bin/sudo --non-interactive --preserve-env "PATH=${PATH}" "${0}" "${@}"
+[ "$(id -u)" -eq 0 ] || exec sudo --non-interactive --preserve-env "PATH=${PATH}" "${0}" "${@}"
 
 # Just for safety's sake
 cd /
 
 set -euo pipefail
 
-say() {
-	echo -e "$(/usr/bin/date -u -Ins): ${@}"
+timestamp()
+{
+	date -Ins -u
 }
 
-err() {
-	say "❌ ERROR: ${@}" 1>&2
+say()
+{
+	echo -e "$(timestamp): ${@}"
 }
 
-fail() {
+err()
+{
 	say "❌ ${@}" 1>&2
+}
+
+fail()
+{
+	err "${@}"
 	exit ${EXIT_CODE:-1}
 }
 
-to_boolean() {
+to_boolean()
+{
 	case "${1,,}" in
 		true | t | 1 | yes | on | enabled | enable ) echo "true" ;;
 		* ) echo "false" ;;
 	esac
 }
 
-is_valid_hostname() {
+is_valid_hostname()
+{
 	local NAME="${1,,}"
 	[[ "${NAME}" =~ ^([a-z0-9][-a-z0-9]*)?[a-z0-9]([.]([a-z0-9][-a-z0-9]*)?[a-z0-9])*$ ]] || return 1
 	return 0
 }
 
-is_valid_port() {
+is_valid_port()
+{
 	local PORT="${1}"
 	[[ "${PORT}" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
 	[ ${PORT} -gt 0 ] || return 1
@@ -40,13 +51,15 @@ is_valid_port() {
 	return 0
 }
 
-is_valid_url() {
+is_valid_url()
+{
 	local URL="${1}"
 	[[ "${URL}" =~ ^([^:/?#]+)://([^/?#]*)?([^?#]*)([?]([^#]*))?(#(.*))?$ ]] || return 1
 	return 0
 }
 
-validate_ip() {
+validate_ip()
+{
    [ ${#} -ge 1 ] || return 1
    local PARTS=()
    for IP in "${@}" ; do
@@ -68,7 +81,8 @@ validate_ip() {
 }
 
 
-is_variable_true() {
+is_variable_true()
+{
 	local V="${1}"
 	[ -v "${V}" ] || return 1
 	case "${!V,,}" in
@@ -77,63 +91,69 @@ is_variable_true() {
 	return 1
 }
 
-is_supported() {
+is_supported()
+{
 	local V="${1}"
 	[ -n "${V}" ] || return 1
 	is_variable_true "ACME_SUPPORT_${V}"
 }
 
-render_password() {
+render_password()
+{
 	local V=""
 	read V REST < <(tr -dc '[:alnum:]' < /dev/urandom | fold -w ${1:-32} | head -1)
 	echo -n "${V}"
 }
 
-validate_cert() {
+validate_cert()
+{
 	local CERT="${1}"
 	[ -e "${CERT}" ] || return 1
 	[ -f "${CERT}" ] || return 1
 	[ -r "${CERT}" ] || return 1
 	[ -s "${CERT}" ] || return 1
-	"${OPENSSL}" x509 -noout -text -in "${CERT}" &>/dev/null || return ${?}
+	openssl x509 -noout -text -in "${CERT}" &>/dev/null || return ${?}
 	return 0
 }
 
-is_ca() {
+is_ca()
+{
 	local CERT="${1}"
 	validate_cert "${CERT}" || return ${?}
 	# Is the certificate a CA certificate of some kind?
-	"${OPENSSL}" x509 -noout -ext basicConstraints -in "${CERT}" | \
-		/usr/bin/tail -n +2 | \
-		/usr/bin/sed -e 's;, ;\n;g' -e 's;^\s*;;g' | \
-		/usr/bin/grep -qi "^CA:TRUE" || return ${?}
+	openssl x509 -noout -ext basicConstraints -in "${CERT}" | \
+		tail -n +2 | \
+		sed -e 's;, ;\n;g' -e 's;^\s*;;g' | \
+		grep -qi "^CA:TRUE" || return ${?}
 	return 0
 }
 
-install_chain() {
+install_chain()
+{
 	local CERT_BASE_NAME="${1}"
-	local DEST="$(/usr/bin/readlink -f "$(/usr/bin/mktemp -d)")"
-	( cd "${DEST}" && "${CSPLIT}" /dev/stdin '/BEGIN CERTIFICATE/' '{*}' &>/dev/null ) || return $?
+	local DEST="$(readlink -f "$(mktemp -d)")"
+	( cd "${DEST}" && csplit /dev/stdin '/BEGIN CERTIFICATE/' '{*}' &>/dev/null ) || return $?
 	while read n ; do
 		# Leave only the certificate bits in each split out file
-		/usr/bin/sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${n}"
+		sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${n}"
 
 		# Keep only the files that contain certificate bits
-		if /usr/bin/grep -q "END CERTIFICATE" "${n}" && is_ca "${n}" ; then
-			local SUBJECT="$("${OPENSSL}" x509 -noout -subject -in "${n}" | /usr/bin/sed -e 's;^subject=;;g')"
-			local ISSUER="$("${OPENSSL}" x509 -noout -issuer -in "${n}" | /usr/bin/sed -e 's;^issuer=;;g')"
+		if grep -q "END CERTIFICATE" "${n}" && is_ca "${n}" ; then
+			local SUBJECT="$(openssl x509 -noout -subject -in "${n}" | sed -e 's;^subject=;;g')"
+			local ISSUER="$(openssl x509 -noout -issuer -in "${n}" | sed -e 's;^issuer=;;g')"
 			say "\tInstalling certificate: ${SUBJECT}"
 			[ "${SUBJECT}" != "${ISSUER}" ] && say "\tIssued by: ${ISSUER}"
 			local TGT_NAME="${CERT_BASE_NAME}.${n##*/}.pem"
-			/usr/bin/mv -f "${n}" "${TGT_NAME}"
+			mv -f "${n}" "${TGT_NAME}"
 		else
-			/usr/bin/rm -f "${n}" &>/dev/null
+			rm -f "${n}" &>/dev/null
 		fi
-	done < <(/usr/bin/find "${DEST}" -mindepth 1 -maxdepth 1 -type f -name 'xx*')
-	/usr/bin/rm -rf "${DEST}"
+	done < <(find "${DEST}" -mindepth 1 -maxdepth 1 -type f -name 'xx*')
+	rm -rf "${DEST}"
 }
 
-download_from_port() {
+download_from_port()
+{
 	local HOST="${1}"
 	local SNI="${2}"
 	local PORT="${3}"
@@ -154,20 +174,56 @@ download_from_port() {
 	[ -n "${CERT_BASE_NAME}" ] && CERT_BASE_NAME+="@"
 	CERT_BASE_NAME+="${HOST}:${PORT}${PROTOCOL}"
 
-	"${OPENSSL}" s_client -connect "${HOST}:${PORT}" \
+	openssl s_client -connect "${HOST}:${PORT}" \
 		"${SNI_FLAGS[@]}" "${TLS_FLAGS[@]}" \
 		-showcerts </dev/null 2>/dev/null | \
 			install_chain "${TARGET}/${CERT_BASE_NAME}"
 	return 0
 }
 
-download_chain() {
+download_chain()
+{
 	local CERT_BASE_NAME="${1}"
 	local URL="${2}"
 	local RC=0
-	OUT="$("${CURL}" -kL --fail --silent --show-error --connect-timeout 5 -o >(install_chain "${CERT_BASE_NAME}") "${URL}" 2>&1)" || RC=${?}
+	OUT="$(curl -kL --fail --silent --show-error --connect-timeout 5 -o >(install_chain "${CERT_BASE_NAME}") "${URL}" 2>&1)" || RC=${?}
 	[ ${RC} -ne 0 ] && err "Failed to download the certificates from [${URL}] (rc=${RC}):\n${OUT}"
 	return ${RC}
+}
+
+add_global_trusts()
+{
+	local TYPE="${1}"
+	local KEYSTORE="${2}"
+	local PASSWORD="${3}"
+
+	to_boolean "${ACME_KEYSTORE_WITH_TRUSTS:-false}" || return 0
+
+	say "👉 Adding the default global trusts..."
+	# First off, add the trusts from the default CACERTS
+	keytool \
+		-importkeystore \
+		-srckeystore "${CACERTS}" \
+		-srcstorepass "${CACERTS_PASS}" \
+		-destkeystore "${KEYSTORE}" \
+		-deststorepass "${PASSWORD}" \
+		-deststoretype "${TYPE}" < /dev/null || err "Could not append the global trusts (cacerts)"
+
+	# Now add any files from the anchors directory. By now,
+	# these should include any and all declared trusts
+	say "👉 Adding additional global trusts..."
+	while read CERT ; do
+		ALIAS="${CERT##*/}"
+		ALIAS="acme-${ALIAS%.*}"
+		keytool \
+			-importcert \
+			-noprompt \
+			-keystore "${KEYSTORE}" \
+			-storepass "${PASSWORD}" \
+			-storetype "${TYPE}" \
+			-alias "${ALIAS}" \
+			-file "${CERT}" < /dev/null || err "Could not append [${CERT}]"
+	done < <(find "${ANCHORS}" -mindepth 1 -maxdepth 1 -type f | sort)
 }
 
 if "$(to_boolean "${ACME_DISABLE:-false}")" ; then
@@ -175,11 +231,33 @@ if "$(to_boolean "${ACME_DISABLE:-false}")" ; then
 	exit 0
 fi
 
-[ -v ACM_GROUP ] || fail "The ACM_GROUP environment variable is REQUIRED"
-[ -v SSL_DIR ] || SSL_DIR="/.ssl"
-[ -v SSL_TRUSTS_DIR ] || SSL_TRUSTS_DIR="/.trusts"
-[ -v ANCHORS ] || ANCHORS="/etc/pki/ca-trust/source/anchors"
-[ -v ACME_URL ] || ACME_URL="https://acme:9000"
+[ -v ACM_GROUP ] || ACM_GROUP=""
+[ -n "${ACM_GROUP}" ] || fail "The ACM_GROUP environment variable is REQUIRED"
+getent group "${ACM_GROUP}" &>/dev/null || fail "The group [${ACM_GROUP}] does not exist"
+
+[ -v SSL_DIR ] || SSL_DIR=""
+[ -n "${SSL_DIR}" ] || SSL_DIR="/.ssl"
+
+[ -v SSL_TRUSTS_DIR ] || SSL_TRUSTS_DIR=""
+[ -n "${SSL_TRUSTS_DIR}" ] || SSL_TRUSTS_DIR="/.trusts"
+
+[ -v PKI_HOME ] || PKI_HOME=""
+[ -n "${PKI_HOME}" ] || PKI_HOME="/etc/pki"
+
+[ -v ANCHORS ] || ANCHORS=""
+[ -n "${ANCHORS}" ] || ANCHORS="${PKI_HOME}/ca-trust/source/anchors"
+
+[ -v CACERTS ] || CACERTS=""
+[ -n "${CACERTS}" ] || CACERTS="${PKI_HOME}/java/cacerts"
+
+[ -v CACERTS_PASS ] || CACERTS_PASS=""
+[ -n "${CACERTS_PASS}" ] || CACERTS_PASS="changeit"
+
+[ -v ACME_URL ] || ACME_URL=""
+[ -n "${ACME_URL}" ] || ACME_URL="https://acme:9000"
+
+[ -v ACME_KEY_ALIAS ] || ACME_KEY_ALIAS=""
+[ -n "${ACME_KEY_ALIAS}" ] || ACME_KEY_ALIAS="acme"
 
 # Validate the URL
 [[ "${ACME_URL}" =~ ^http(s)?://([^:/]+)(:([1-9][0-9]*))?(/.*)?$ ]] || fail "Malformed URL for the ACME CA: [${ACME_URL}]"
@@ -201,22 +279,11 @@ ACME_INT_CA_ANCHOR="${ANCHORS}/${ACME_INT_CA_BASENAME}.crt"
 
 ################################################################################
 #
-# Before we start ... do we already have what we need?
-#
-################################################################################
-CURL="$(type -P curl 2>/dev/null)" || fail "cURL is not installed, cannot continue!"
-CSPLIT="$(type -P csplit 2>/dev/null)" || fail "Csplit is not installed, cannot continue!"
-STEP="$(type -P step 2>/dev/null)" || fail "Step is not installed, cannot continue!"
-OPENSSL="$(type -P openssl 2>/dev/null)" || fail "OpenSSL is not installed, cannot continue!"
-SHA256SUM="$(type -P sha256sum 2>/dev/null)" || fail "sha256sum is not installed, cannot continue!"
-
-################################################################################
-#
 # Check that our existing stuff is valid
 #
 ################################################################################
 GENERATE_NEW_CERTIFICATES="false"
-/usr/local/bin/acme-validate || GENERATE_NEW_CERTIFICATES="true"
+acme-validate || GENERATE_NEW_CERTIFICATES="true"
 
 if "${GENERATE_NEW_CERTIFICATES}" ; then
 	################################################################################
@@ -227,13 +294,13 @@ if "${GENERATE_NEW_CERTIFICATES}" ; then
 
 	# Wait up to 5 minutes for the CA to come up
 	MAX_WAIT=300
-	START="$(/usr/bin/date +%s)"
+	START="$(date +%s)"
 	say "👉 Fetching the root CA certificate from [${ACME_HOST}]"
 	while true ; do
 		# TODO: What's the standard way to do this in ACME-land?
-		OUT="$("${CURL}" -kL --fail --silent --show-error -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
+		OUT="$(curl -kL --fail --silent --show-error -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
 		err "Failed to get the step root CA (rc=${?}):\n${OUT}"
-		NOW="$(/usr/bin/date +%s)"
+		NOW="$(date +%s)"
 		[ $(( NOW - START )) -ge ${MAX_WAIT} ] && fail "Timed out trying to reach the CA issuer at [${ACME_URL}]"
 		sleep 5 || fail "Sleep interrupted trying to wait for [${ACME_URL}] - cannot continue"
 	done
@@ -244,15 +311,15 @@ if "${GENERATE_NEW_CERTIFICATES}" ; then
 	say "👉 Fetching the intermediate CA certificate from [${ACME_HOST}]"
 	(
 		set -euo pipefail
-		D="$(/usr/bin/mktemp -d)"
+		D="$(mktemp -d)"
 		cd "${D}"
 		INT_FILE="xx02"
-		"${CSPLIT}" <("${OPENSSL}" s_client -connect "${ACME_HOST}:${ACME_PORT}" -showcerts </dev/null 2>/dev/null) \
+		csplit <(openssl s_client -connect "${ACME_HOST}:${ACME_PORT}" -showcerts </dev/null 2>/dev/null) \
 			'/BEGIN CERTIFICATE/' '{*}' &>/dev/null
-		/usr/bin/sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${INT_FILE}"
-		/usr/bin/mv -f "${INT_FILE}" "${ACME_INT_CA_ANCHOR}"
+		sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${INT_FILE}"
+		mv -f "${INT_FILE}" "${ACME_INT_CA_ANCHOR}"
 		cd /
-		/usr/bin/rm -rf "${D}" || true
+		rm -rf "${D}" || true
 	) || fail "Failed to fetch the intermediate CA from [${ACME_URL}]"
 	say "\t✅ Fetch OK!"
 fi
@@ -264,7 +331,7 @@ fi
 ################################################################################
 say "👉 Deploying the common trusted certificates from [${SSL_TRUSTS_DIR}]"
 [ -d "${SSL_TRUSTS_DIR}" ] || mkdir -p "${SSL_TRUSTS_DIR}"
-SSL_TRUSTS_DIR="$(/usr/bin/readlink -f "${SSL_TRUSTS_DIR}")"
+SSL_TRUSTS_DIR="$(readlink -f "${SSL_TRUSTS_DIR}")"
 
 COUNT=0
 while read cert ; do
@@ -330,7 +397,7 @@ while read cert ; do
 	esac
 
 	(( ++COUNT ))
-done < <(/usr/bin/find "${SSL_TRUSTS_DIR}" -mindepth 1 -maxdepth 1 -name "ssl-trust-*.*" | /usr/bin/sort)
+done < <(find "${SSL_TRUSTS_DIR}" -mindepth 1 -maxdepth 1 -name "ssl-trust-*.*" | sort)
 if [ ${COUNT} -eq 0 ] ; then
 	say "\t✅ No certificates to deploy."
 else
@@ -342,20 +409,22 @@ fi
 # Download our new certificates from the ACME instance
 #
 ################################################################################
-[ -v ACME_PASSWORD_FILE ] || ACME_PASSWORD_FILE="/.acme.password"
+[ -v ACME_PASSWORD_FILE ] || ACME_PASSWORD_FILE=""
+[ -n "${ACME_PASSWORD_FILE}" ] || ACME_PASSWORD_FILE="/.acme.password"
+
 if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	################################################################################
 	#
 	# Initialize the ACME client
 	#
 	################################################################################
-	if "${STEP}" ca health &>/dev/null ; then
+	if step ca health &>/dev/null ; then
 		say "✅ Step CA client already initialized!"
 	else
 		say "👉 Initializing the Step CA Acme Client"
-		"${STEP}" ca bootstrap -f \
+		step ca bootstrap -f \
 			--ca-url "${ACME_URL}" \
-			--fingerprint "$("${STEP}" certificate fingerprint "${ACME_ROOT_CA_ANCHOR}")"
+			--fingerprint "$(step certificate fingerprint "${ACME_ROOT_CA_ANCHOR}")"
 		say "\t✅ Done!"
 	fi
 
@@ -365,7 +434,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	SECURE_FILES=()
 
 	if "${GENERATE_NEW_CERTIFICATES}" ; then
-		FQDN="$(/usr/bin/hostname -f)"
+		FQDN="$(hostname -f)"
 		IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
 
 		# Fully-Qualified Service Name
@@ -456,7 +525,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		fi
 
 		say "👉 Rendering a new certificate for this pod's use"
-		"${STEP}" ca certificate \
+		step ca certificate \
 			"${FQSN:-${FQDN}}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
 			"${SAN[@]}" \
 			-f \
@@ -465,21 +534,21 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			--provisioner-password-file "${ACME_PASSWORD_FILE}" \
 			--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
 		say "👉 Removing extra stuff from the certificate..."
-		/usr/bin/sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${SSL_DIR}/cert.pem"
+		sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${SSL_DIR}/cert.pem"
 		say "\t✅ Certificate ready!"
 
 		say "👉 Creating an encrypted version of the key..."
-		"${OPENSSL}" rsa -aes256 \
+		openssl rsa -aes256 \
 			-in "${SSL_DIR}/cert.key" \
 			-out "${SSL_DIR}/cert.key.enc" \
-			-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
+			-passout file:<(yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
 		SECURE_FILES+=("${SSL_DIR}/cert.key")
 		say "\t✅ Encrypted key ready!"
 
 		say "👉 Copying the root and intermediate CAs into the target directory..."
-		/usr/bin/cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
-		/usr/bin/cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
-		/usr/bin/cat \
+		cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
+		cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
+		cat \
 			"${ACME_INT_CA_ANCHOR}" \
 			"${ACME_ROOT_CA_ANCHOR}" \
 			> "${SSL_DIR}/ca-chain.pem"
@@ -493,7 +562,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	fi
 
 	say "👉 Rendering the certificate files for HAProxy..."
-	/usr/bin/cat \
+	cat \
 		"${SSL_DIR}/cert.pem" \
 		"${SSL_DIR}/ca-chain.pem" \
 		"${SSL_DIR}/cert.key" \
@@ -502,33 +571,37 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	say "\t✅ Done!"
 
 	# Find the Java keytool, if it's installed
-	KEYTOOL="$(type -P keytool 2>/dev/null)" || true
-	if [ -n "${KEYTOOL}" ] && [ -f "${KEYTOOL}" ] && [ -r "${KEYTOOL}" ] && [ -x "${KEYTOOL}" ] ; then
+	if type -P keytool &>/dev/null ; then
 		say "👉 Rendering a PKCS12 Keystore with the new certificate & key..."
+		STOREPASS="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
 
 		# First, create the base keystore
 		PKCS12="${SSL_DIR}/keystore.pkcs12"
-		"${OPENSSL}" pkcs12 \
+		openssl pkcs12 \
 			-export \
 			-in "${SSL_DIR}/cert.pem" \
 			-inkey "${SSL_DIR}/cert.key" \
-			-passin file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2) \
-			-name "acme" \
+			-passin file:<(yes "${STOREPASS}" | head -2) \
+			-name "${ACME_KEY_ALIAS}" \
 			-out "${PKCS12}" \
-			-passout file:<(/usr/bin/yes "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" | head -2)
+			-passout file:<(yes "${STOREPASS}" | head -2)
 
 		# Then, append the additional CAs into the newly-created keystore
 		for CERT in ca-int.pem ca-root.pem ; do
 			say "\t👉 Adding ${CERT}..."
-			"${KEYTOOL}" \
+			keytool \
 				-importcert \
 				-noprompt \
 				-keystore "${PKCS12}" \
-				-storepass "$(<"${ACME_KEYSTORE_PASSWORD_FILE}")" \
+				-storepass "${STOREPASS}" \
 				-storetype "PKCS12" \
 				-alias "acme-${CERT%.*}" \
 				-file "${SSL_DIR}/${CERT}"
 		done
+
+		# Finally, if so configured, append both the additional trusts and the
+		# Operating system's default trusts into the keystore
+		add_global_trusts PKCS12 "${PKCS12}" "${STOREPASS}"
 		say "\t✅ Ready!"
 
 		# Finally, if other keystore types are required, use them
@@ -536,13 +609,12 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			is_supported "${STORETYPE^^}" || continue
 			say "👉 Creating a ${STORETYPE^^} Java Keystore with the new certificate & key..." 
 			STOREFILE="${SSL_DIR}/keystore.${STORETYPE}"
-			STOREPASS="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
 			rm -f "${STOREFILE}" &>/dev/null || true
 
 			# First, copy only the key and cert we want
-			"${KEYTOOL}" \
+			keytool \
 				-importkeystore \
-				-srcalias "acme" \
+				-srcalias "${ACME_KEY_ALIAS}" \
 				-srckeystore "${PKCS12}" \
 				-srcstorepass "${STOREPASS}" \
 				-srcstoretype PKCS12 \
@@ -554,7 +626,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			# Then, append the additional CAs into the newly-created keystore
 			for CERT in ca-int.pem ca-root.pem ; do
 				say "\t👉 Adding ${CERT}..."
-				"${KEYTOOL}" \
+				keytool \
 					-importcert \
 					-noprompt \
 					-keystore "${STOREFILE}" \
@@ -563,6 +635,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 					-alias "acme-${CERT%.*}" \
 					-file "${SSL_DIR}/${CERT}"
 			done
+
+			add_global_trusts "${STORETYPE}" "${STOREFILE}" "${STOREPASS}"
 			say "\t✅ Ready!"
 		done
 	fi
@@ -570,8 +644,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	say "👉 Setting tight permissions for the generated data..."
 
 	# By default, owned by root but readable by ACM_GROUP
-	/usr/bin/chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
-	/usr/bin/chmod -R a=rX "${SSL_DIR}"
+	chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
+	chmod -R a=rX "${SSL_DIR}"
 
 	# Secure the most sensitive files so they're only readable
 	# by the user who will be consuming them ... the other files
@@ -580,8 +654,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	if [ ${#SECURE_FILES[@]} -gt 0 ] ; then
 		KEY_OWNER="root"
 		[ -v SUDO_USER ] && KEY_OWNER="${SUDO_USER}"
-		/usr/bin/chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
-		/usr/bin/chmod -R u=r,go= "${SECURE_FILES[@]}"
+		chown "${KEY_OWNER}:${ACM_GROUP}" "${SECURE_FILES[@]}"
+		chmod -R u=r,go= "${SECURE_FILES[@]}"
 	fi
 
 	say "\t✅ Done!"
@@ -591,7 +665,7 @@ else
 fi
 
 say "👉 Updating the trusted certificates"
-/usr/bin/chown -R root:root "${ANCHORS}"
-/usr/bin/chmod -R 0440 "${ANCHORS}"
-/usr/bin/update-ca-trust extract || fail "Failed to update the CA trusts"
+chown -R root:root "${ANCHORS}"
+chmod -R 0440 "${ANCHORS}"
+update-ca-trust extract || fail "Failed to update the CA trusts"
 say "\t✅ CA trusts updated system-wide!"
