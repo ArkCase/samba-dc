@@ -8,44 +8,19 @@ case "${DEBUG,,}" in
 	true | t | yes | y | 1 | on | active | enabled ) DEBUG="true" ;;
 esac
 
-#${DEBUG} && set -x
-
-CONF_DIR="/config"
-SMB_CONF="/etc/samba/smb.conf"
-EXT_SMB_CONF="${CONF_DIR}/smb.conf"
-KRB_CONF="/etc/krb5.conf"
-EXT_KRB_CONF="${CONF_DIR}/krb5.conf"
+${DEBUG} && set -x
 
 #
 # Set and normalize variables
 #
-DOMAINPASS="${DOMAINPASS:-youshouldsetapassword}"
-JOIN="${JOIN:-false}"
-JOINSITE="${JOINSITE:-NONE}"
-MULTISITE="${MULTISITE:-false}"
-NOCOMPLEXITY="${NOCOMPLEXITY:-false}"
-INSECURELDAP="${INSECURELDAP:-false}"
-DNSFORWARDER="${DNSFORWARDER:-NONE}"
-HOSTIP="${HOSTIP:-NONE}"
+[ -v BASE_DIR ] || BASE_DIR=""
+[ -n "${BASE_DIR}" ] || BASE_DIR="/app"
 
-DOMAIN="${DOMAIN:-SAMDOM.LOCAL}"
-LDOMAIN="${DOMAIN,,}"
-UDOMAIN="${DOMAIN^^}"
-REALM="${UDOMAIN%%.*}"
+[ -v SECRETS_DIR ] || SECRETS_DIR=""
+[ -n "${SECRETS_DIR}" ] || SECRETS_DIR="${BASE_DIR}/secrets"
 
-D2=()
-IFS="." D2=(${DOMAIN})
-D3=()
-for P in "${D2[@]}" ; do
-	D3+=("DC=${P^^}")
-done
-
-DC=""
-for P in "${D3[@]}" ; do
-	[ -n "${DC}" ] && DC="${DC},"
-	DC="${DC}${P}"
-done
-unset D2 D3
+[ -v DOMAIN ] || DOMAIN=""
+[ -n "${DOMAIN}" ] || DOMAIN="$(<"${SECRETS_DIR}/DOMAIN_NAME)")"
 
 #
 # This function will check to see if the instance can be considered
@@ -101,7 +76,7 @@ is_initialized() {
 	#
 	# Temporarily turned off due to behavioral change on the O/S.
 	#
-	# For some reason, tnese names are now being URL-encoded (i.e.
+	# For some reason, these names are now being URL-encoded (i.e.
 	# the "=" sign goes to "%3D" and the "," goes to "%2C"). This
 	# wasn't happening before ... we could support both, but that
 	# would require significant logic upgrades which, honestly,

@@ -3,50 +3,16 @@ SCRIPT="$(readlink -f "${BASH_SOURCE:-${0}}")"
 BASEDIR="$(dirname "${SCRIPT}")"
 SCRIPT="$(basename "${SCRIPT}")"
 
+[ -v SECRETS_DIR ] || SECRETS_DIR=""
+[ -n "${SECRETS_DIR}" ] || SECRETS_DIR="/app/secrets"
+export SECRETS_DIR
+
 DEBUG="false"
 case "${DEBUG,,}" in
 	true | t | yes | y | 1 | on | active | enabled ) DEBUG="true" ;;
 esac
-
-#${DEBUG} && set -x
-
-CONF_DIR="/config"
-SMB_CONF="/etc/samba/smb.conf"
-EXT_SMB_CONF="${CONF_DIR}/smb.conf"
-KRB_CONF="/etc/krb5.conf"
-EXT_KRB_CONF="${CONF_DIR}/krb5.conf"
-
-#
-# Set and normalize variables
-#
-JOIN="${JOIN:-false}"
-JOINSITE="${JOINSITE:-NONE}"
-MULTISITE="${MULTISITE:-false}"
-NOCOMPLEXITY="${NOCOMPLEXITY:-false}"
-INSECURELDAP="${INSECURELDAP:-false}"
-DNSFORWARDER="${DNSFORWARDER:-NONE}"
-HOSTIP="${HOSTIP:-NONE}"
-
-DOMAIN="${DOMAIN:-SAMDOM.LOCAL}"
-LDOMAIN="${DOMAIN,,}"
-UDOMAIN="${DOMAIN^^}"
-REALM="${UDOMAIN%%.*}"
-
-D2=()
-IFS="." D2=(${DOMAIN})
-D3=()
-for P in "${D2[@]}" ; do
-	D3+=("DC=${P^^}")
-done
-
-DC=""
-for P in "${D3[@]}" ; do
-	[ -n "${DC}" ] && DC="${DC},"
-	DC="${DC}${P}"
-done
-unset D2 D3
-
 ${DEBUG} && set -x
+
 OUT="$(openssl s_client -connect localhost:636 -showcerts </dev/null 2>&1)"
 RC=${?}
 ${DEBUG} && set +x
@@ -56,13 +22,10 @@ if [ ${RC} -ne 0 ] ; then
 	exit 1
 fi
 echo -e "Port 636/tcp seems to be listening and serving out certificates"
-${DEBUG} && echo -e "${CERTS}"
-
-# TODO: Do we want to validate the certificate?
-export LDAPTLS_REQCERT="never"
+${DEBUG} && echo -e "${OUT}"
 
 ${DEBUG} && set -x
-OUT="$(ldapsearch -H ldaps://localhost -D "${REALM}\\Administrator" -y <(echo -n "${DOMAINPASS}") -b "${DC}" '(objectClass=user)' dn 2>&1)"
+OUT="$(ldapsearch -H ldaps://localhost -D "$(<"${SECRETS_DIR}/DOMAIN_REALM")\\Administrator" -y "${SECRETS_DIR}/DOMAIN_PASSWORD" -b "$(<"${SECRETS_DIR}/DOMAIN_ROOT_DN")" '(objectClass=user)' dn 2>&1)"
 RC=${?}
 ${DEBUG} && set +x
 if [ ${RC} -ne 0 ] ; then
