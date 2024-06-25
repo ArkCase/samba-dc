@@ -25,7 +25,7 @@ echo -e "Port 636/tcp seems to be listening and serving out certificates"
 ${DEBUG} && echo -e "${OUT}"
 
 ${DEBUG} && set -x
-OUT="$(ldapsearch -H ldaps://localhost -D "$(<"${SECRETS_DIR}/DOMAIN_REALM")\\Administrator" -y "${SECRETS_DIR}/DOMAIN_PASSWORD" -b "$(<"${SECRETS_DIR}/DOMAIN_ROOT_DN")" '(objectClass=user)' dn 2>&1)"
+OUT="$(ldapsearch -H ldaps://localhost -D "$(<"${SECRETS_DIR}/DOMAIN_REALM")\\Administrator" -y "${SECRETS_DIR}/DOMAIN_PASSWORD" -s one -b "$(<"${SECRETS_DIR}/DOMAIN_ROOT_DN")" "(objectClass=organizationalUnit)" dn 2>&1)"
 RC=${?}
 ${DEBUG} && set +x
 if [ ${RC} -ne 0 ] ; then
