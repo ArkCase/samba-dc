@@ -411,11 +411,13 @@ if [ -d "${BOOT_DIR}" ] ; then
 		cd "${BOOT_DIR}" || exit 1
 		while read script ; do
 			say "\tLaunching the boot script [${script}]..."
-			if ! "$(readlink -f "${script}")" ; then
-				say "\tError executing the boot script [${script}] (rc=${?})"
+			RC=0
+			( "${script}" 2>&1 ) || RC=${?}
+			if [ ${RC} -ne 0 ]  ; then
+				say "\tError executing the boot script [${script}] (rc=${RC})"
 				exit 1
 			fi
-		done < <(find . -mindepth 1 -maxdepth 1 -type f -perm /u+x | sort | sed -e 's;^./;;g')
+		done < <(find . -mindepth 1 -maxdepth 1 -type f -readable -executable | sort | sed -e 's;^./;;g')
 	)
 fi
 
