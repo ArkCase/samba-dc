@@ -412,7 +412,7 @@ if [ -d "${BOOT_DIR}" ] ; then
 		while read script ; do
 			say "\tLaunching the boot script [${script}]..."
 			RC=0
-			( "${script}" 2>&1 ) || RC=${?}
+			( "./${script}" 2>&1 ) || RC=${?}
 			if [ ${RC} -ne 0 ]  ; then
 				say "\tError executing the boot script [${script}] (rc=${RC})"
 				exit 1
