@@ -1,12 +1,11 @@
 #!/bin/bash
-SCRIPT="$(readlink -f "${BASH_SOURCE:-${0}}")"
-BASEDIR="$(dirname "${SCRIPT}")"
-SCRIPT="$(basename "${SCRIPT}")"
 
-DEBUG="false"
-case "${DEBUG,,}" in
-	true | t | yes | y | 1 | on | active | enabled ) DEBUG="true" ;;
-esac
+set -euo pipefail
+. /.functions
+
+define_base_vars
+
+DEBUG="$(to_boolean "${DEBUG:-false}")"
 
 ${DEBUG} && set -x
 
@@ -26,7 +25,8 @@ ${DEBUG} && set -x
 # This function will check to see if the instance can be considered
 # "configured"
 #
-is_initialized() {
+is_initialized()
+{
 	local CANDIDATES=()
 
 	#
@@ -136,4 +136,4 @@ fi
 
 # All appears to be well ... but are we really ready?
 echo -e "The instance is ready"
-exec "${BASEDIR}/test-live.sh"
+exec "${__BASEDIR}/test-live.sh"

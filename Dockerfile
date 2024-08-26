@@ -104,6 +104,7 @@ EXPOSE 636
 # Set up script and run
 #
 COPY --chown=root:root entrypoint test-ready.sh test-live.sh test-startup.sh samba-directory-templates.tar.gz /
+COPY --chown=root:root functions /.functions
 COPY --chown=root:root acme-init acme-validate /usr/local/bin/
 RUN chmod 755 /entrypoint /test-ready.sh /test-live.sh /test-startup.sh /usr/local/bin/acme-init /usr/local/bin/acme-validate
 

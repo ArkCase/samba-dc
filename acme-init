@@ -1,54 +1,47 @@
 #!/bin/bash
 [ "$(id -u)" -eq 0 ] || exec sudo --non-interactive --preserve-env "PATH=${PATH}" "${0}" "${@}"
 
+set -euo pipefail
+. /.functions
+
 # Just for safety's sake
 cd /
 
-set -euo pipefail
-
-timestamp()
+marker_exists()
 {
-	date -Ins -u
-}
-
-say()
-{
-	echo -e "$(timestamp): ${@}"
-}
-
-err()
-{
-	say "❌ ${@}" 1>&2
-}
-
-fail()
-{
-	err "${@}"
-	exit ${EXIT_CODE:-1}
-}
-
-to_boolean()
-{
-	case "${1,,}" in
-		true | t | 1 | yes | on | enabled | enable ) echo "true" ;;
-		* ) echo "false" ;;
-	esac
-}
-
-is_valid_hostname()
-{
-	local NAME="${1,,}"
-	[[ "${NAME}" =~ ^([a-z0-9][-a-z0-9]*)?[a-z0-9]([.]([a-z0-9][-a-z0-9]*)?[a-z0-9])*$ ]] || return 1
+	local MARKER="${1}"
+	is_file "${MARKER}" || return 1
+	[ -s "${MARKER}" ] || return 1
 	return 0
 }
 
-is_valid_port()
+wait_for_marker()
 {
-	local PORT="${1}"
-	[[ "${PORT}" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
-	[ ${PORT} -gt 0 ] || return 1
-	[ ${PORT} -lt 65536 ] || return 1
+	local MARKER="${1}"
+	local ACME_WAIT_TIMEOUT_STR="$(secs_to_timestr "${ACME_WAIT_TIMEOUT}")"
+	local FIRST="true"
+	local START="$(date +%s)"
+	while ! marker_exists "${MARKER}" ; do
+		"${FIRST}" && waiting "Waiting for the ACME certificates to be initialized (up to ${ACME_WAIT_TIMEOUT_STR} total)..."
+		FIRST="false"
+
+		# Poke every 100ms (10 times per second)
+		sleep 0.1 || fail "Sleep interrupted"
+		local NOW="$(date +%s)"
+
+		# If the timeout has expired, return a non-zero value
+		[ $(( NOW - START )) -lt ${ACME_WAIT_TIMEOUT} ] || return 1
+	done
+	ok "ACME client is initialized is ready"
 	return 0
+}
+
+create_marker()
+{
+	local MARKER="${1}"
+	local DIR="$(dirname "${MARKER}")"
+	[ -d "${DIR}" ] || mkdir -p "${DIR}" && timestamp > "${MARKER}"
+	return ${?}
 }
 
 is_valid_url()
@@ -60,26 +53,14 @@ is_valid_url()
 
 validate_ip()
 {
-   [ ${#} -ge 1 ] || return 1
-   local PARTS=()
-   for IP in "${@}" ; do
-	   IFS="." PARTS=(${IP})
-	   # Is it made of 4 parts separated by dots?
-	   [ ${#PARTS[@]} -eq 4 ] || return 1
-	   for p in "${PARTS[@]}" ; do
-		   # Is it a 1-3 digit number?
-		   [[ "${p}" =~ ^[0-9]{1,3}$ ]] || return 1
-		   # Don't allow leading zeros
-		   [[ "${p}" =~ ^0[0-9]{1,2}$ ]] && return 1
-		   # Is it in [0..255]?
-		   [ ${p} -ge 0 ] || return 1
-		   [ ${p} -le 255 ] || return 1
-	   done
-	   echo "${IP}"
-   done
-   return 0
+	[ ${#} -ge 1 ] || return 1
+	local PARTS=()
+	for IP in "${@}" ; do
+		is_valid_ipv4 "${IP}" || return 1
+		echo "${IP}"
+	done
+	return 0
 }
-
 
 is_variable_true()
 {
@@ -98,19 +79,10 @@ is_supported()
 	is_variable_true "ACME_SUPPORT_${V}"
 }
 
-render_password()
-{
-	local V=""
-	read V REST < <(tr -dc '[:alnum:]' < /dev/urandom | fold -w ${1:-32} | head -1)
-	echo -n "${V}"
-}
-
 validate_cert()
 {
 	local CERT="${1}"
-	[ -e "${CERT}" ] || return 1
-	[ -f "${CERT}" ] || return 1
-	[ -r "${CERT}" ] || return 1
+	is_file_readable "${CERT}" || return 1
 	[ -s "${CERT}" ] || return 1
 	openssl x509 -noout -text -in "${CERT}" &>/dev/null || return ${?}
 	return 0
@@ -199,7 +171,7 @@ add_global_trusts()
 
 	to_boolean "${ACME_KEYSTORE_WITH_TRUSTS:-false}" || return 0
 
-	say "👉 Adding the default global trusts..."
+	doing "Adding the default global trusts..."
 	# First off, add the trusts from the default CACERTS
 	keytool \
 		-importkeystore \
@@ -211,7 +183,7 @@ add_global_trusts()
 
 	# Now add any files from the anchors directory. By now,
 	# these should include any and all declared trusts
-	say "👉 Adding additional global trusts..."
+	doing "Adding additional global trusts..."
 	while read CERT ; do
 		ALIAS="${CERT##*/}"
 		ALIAS="acme-${ALIAS%.*}"
@@ -227,7 +199,7 @@ add_global_trusts()
 }
 
 if "$(to_boolean "${ACME_DISABLE:-false}")" ; then
-	say "✅ ACME Processing is disabled by configuration (ACME_DISABLE == ${ACME_DISABLE})"
+	ok "ACME Processing is disabled by configuration (ACME_DISABLE == ${ACME_DISABLE})"
 	exit 0
 fi
 
@@ -235,29 +207,18 @@ fi
 [ -n "${ACM_GROUP}" ] || fail "The ACM_GROUP environment variable is REQUIRED"
 getent group "${ACM_GROUP}" &>/dev/null || fail "The group [${ACM_GROUP}] does not exist"
 
-[ -v SSL_DIR ] || SSL_DIR=""
-[ -n "${SSL_DIR}" ] || SSL_DIR="/.ssl"
+set_or_default SSL_DIR "/.ssl"
+set_or_default SSL_TRUSTS_DIR "/.trusts"
+set_or_default PKI_HOME "/etc/pki"
+set_or_default ANCHORS "${PKI_HOME}/ca-trust/source/anchors"
+set_or_default CACERTS "${PKI_HOME}/java/cacerts"
 
-[ -v SSL_TRUSTS_DIR ] || SSL_TRUSTS_DIR=""
-[ -n "${SSL_TRUSTS_DIR}" ] || SSL_TRUSTS_DIR="/.trusts"
-
-[ -v PKI_HOME ] || PKI_HOME=""
-[ -n "${PKI_HOME}" ] || PKI_HOME="/etc/pki"
-
-[ -v ANCHORS ] || ANCHORS=""
-[ -n "${ANCHORS}" ] || ANCHORS="${PKI_HOME}/ca-trust/source/anchors"
-
-[ -v CACERTS ] || CACERTS=""
-[ -n "${CACERTS}" ] || CACERTS="${PKI_HOME}/java/cacerts"
-
-[ -v CACERTS_PASS ] || CACERTS_PASS=""
-[ -n "${CACERTS_PASS}" ] || CACERTS_PASS="changeit"
-
-[ -v ACME_URL ] || ACME_URL=""
-[ -n "${ACME_URL}" ] || ACME_URL="https://acme:9000"
-
-[ -v ACME_KEY_ALIAS ] || ACME_KEY_ALIAS=""
-[ -n "${ACME_KEY_ALIAS}" ] || ACME_KEY_ALIAS="acme"
+set_or_default CACERTS_PASS "changeit"
+set_or_default ACME_URL "https://acme:9000"
+set_or_default ACME_KEY_ALIAS "acme"
+set_or_default ACME_WAIT "false"
+set_or_default ACME_WAIT_MARKER "${SSL_DIR}/.acme-ready"
+set_or_default ACME_WAIT_TIMEOUT "$(timestr_to_secs 20m)"
 
 # Validate the URL
 [[ "${ACME_URL}" =~ ^http(s)?://([^:/]+)(:([1-9][0-9]*))?(/.*)?$ ]] || fail "Malformed URL for the ACME CA: [${ACME_URL}]"
@@ -269,13 +230,16 @@ ACME_PORT="80"
 
 # Validate the values captured above ... must have a valid host and port
 is_valid_hostname "${ACME_HOST}" || fail "Malformed URL for the ACME CA: bad hostname [${ACME_URL}]"
-[ ${ACME_PORT} -ge 1 ] || fail "The port in the URL must be between 1 and 65535"
-[ ${ACME_PORT} -le 65535 ] || fail "The port in the URL must be between 1 and 65535"
+is_valid_port "${ACME_PORT}" || fail "The port in the URL must be between 1 and 65535"
 
 ACME_ROOT_CA_BASENAME="ca-root"
 ACME_ROOT_CA_ANCHOR="${ANCHORS}/${ACME_ROOT_CA_BASENAME}.crt"
 ACME_INT_CA_BASENAME="ca-int"
 ACME_INT_CA_ANCHOR="${ANCHORS}/${ACME_INT_CA_BASENAME}.crt"
+
+if "${ACME_WAIT}" ; then
+	wait_for_marker "${ACME_WAIT_MARKER}" || fail "ACME client initialization timed out"
+fi
 
 ################################################################################
 #
@@ -295,10 +259,10 @@ if "${GENERATE_NEW_CERTIFICATES}" ; then
 	# Wait up to 5 minutes for the CA to come up
 	MAX_WAIT=300
 	START="$(date +%s)"
-	say "👉 Fetching the root CA certificate from [${ACME_HOST}]"
+	doing "Fetching the root CA certificate from [${ACME_HOST}]"
 	while true ; do
 		# TODO: What's the standard way to do this in ACME-land?
-		OUT="$(curl -kL --fail --silent --show-error -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
+		OUT="$(curl -k -fsSL -o "${ACME_ROOT_CA_ANCHOR}" "${ACME_URL}/roots.pem" 2>&1)" && break
 		err "Failed to get the step root CA (rc=${?}):\n${OUT}"
 		NOW="$(date +%s)"
 		[ $(( NOW - START )) -ge ${MAX_WAIT} ] && fail "Timed out trying to reach the CA issuer at [${ACME_URL}]"
@@ -308,7 +272,7 @@ if "${GENERATE_NEW_CERTIFICATES}" ; then
 
 	# Fetch the intermediate CA as well
 	# TODO: What's the standard way to do this in ACME-land?
-	say "👉 Fetching the intermediate CA certificate from [${ACME_HOST}]"
+	doing "Fetching the intermediate CA certificate from [${ACME_HOST}]"
 	(
 		set -euo pipefail
 		D="$(mktemp -d)"
@@ -329,7 +293,7 @@ fi
 # Trust the certificates we're told to trust
 #
 ################################################################################
-say "👉 Deploying the common trusted certificates from [${SSL_TRUSTS_DIR}]"
+doing "Deploying the common trusted certificates from [${SSL_TRUSTS_DIR}]"
 [ -d "${SSL_TRUSTS_DIR}" ] || mkdir -p "${SSL_TRUSTS_DIR}"
 SSL_TRUSTS_DIR="$(readlink -f "${SSL_TRUSTS_DIR}")"
 
@@ -409,9 +373,7 @@ fi
 # Download our new certificates from the ACME instance
 #
 ################################################################################
-[ -v ACME_PASSWORD_FILE ] || ACME_PASSWORD_FILE=""
-[ -n "${ACME_PASSWORD_FILE}" ] || ACME_PASSWORD_FILE="/.acme.password"
-
+set_or_default ACME_PASSWORD_FILE "/.acme.password"
 if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	################################################################################
 	#
@@ -419,9 +381,9 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	#
 	################################################################################
 	if step ca health &>/dev/null ; then
-		say "✅ Step CA client already initialized!"
+		ok "Step CA client already initialized!"
 	else
-		say "👉 Initializing the Step CA Acme Client"
+		doing "Initializing the Step CA Acme Client"
 		step ca bootstrap -f \
 			--ca-url "${ACME_URL}" \
 			--fingerprint "$(step certificate fingerprint "${ACME_ROOT_CA_ANCHOR}")"
@@ -433,7 +395,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	# restrictive of all: only readable by the owner
 	SECURE_FILES=()
 
-	if "${GENERATE_NEW_CERTIFICATES}" ; then
+	if "${GENERATE_NEW_CERTIFICATES}" && ! "${ACME_WAIT}" ; then
 		FQDN="$(hostname -f)"
 		IFS="." read POD SERVICE NAMESPACE SVC CLUSTER_DOMAIN <<< "${FQDN}"
 
@@ -447,7 +409,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		# associated to a pod. They *may* be the same but
 		# aren't required to be. Thus, we check to see if they're
 		# the same, to avoid adding duplicate values
-		[ -v ACME_SERVICE_NAME ] || ACME_SERVICE_NAME="${SERVICE}"
+		set_or_default ACME_SERVICE_NAME "${SERVICE}"
 		if [ "${ACME_SERVICE_NAME}" != "${SERVICE}" ] ; then
 			if [ -n "${NAMESPACE}" ] ; then
 				if [ -n "${CLUSTER_DOMAIN}" ] ; then
@@ -502,7 +464,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			--san "localhost"
 		)
 
-		[ -d "${SSL_DIR}" ] || mkdir -p "${SSL_DIR}" || fail "Failed to create the SSL certificate directory [${SSL_DIR}]"
+		require_dir_readwrite "${SSL_DIR}"
 
 		if [ -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
 			[ -n "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The variable ACME_KEYSTORE_PASSWORD_FILE may not be empty"
@@ -524,7 +486,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			fi
 		fi
 
-		say "👉 Rendering a new certificate for this pod's use"
+		doing "Rendering a new certificate for this pod's use"
 		step ca certificate \
 			"${FQSN:-${FQDN}}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
 			"${SAN[@]}" \
@@ -533,11 +495,11 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			--kty RSA \
 			--provisioner-password-file "${ACME_PASSWORD_FILE}" \
 			--password-file="${ACME_KEYSTORE_PASSWORD_FILE}"
-		say "👉 Removing extra stuff from the certificate..."
+		doing "Removing extra stuff from the certificate..."
 		sed -i -e '/^-\+END CERTIFICATE-\+$/q' "${SSL_DIR}/cert.pem"
 		say "\t✅ Certificate ready!"
 
-		say "👉 Creating an encrypted version of the key..."
+		doing "Creating an encrypted version of the key..."
 		openssl rsa -aes256 \
 			-in "${SSL_DIR}/cert.key" \
 			-out "${SSL_DIR}/cert.key.enc" \
@@ -545,7 +507,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		SECURE_FILES+=("${SSL_DIR}/cert.key")
 		say "\t✅ Encrypted key ready!"
 
-		say "👉 Copying the root and intermediate CAs into the target directory..."
+		doing "Copying the root and intermediate CAs into the target directory..."
 		cp -f "${ACME_ROOT_CA_ANCHOR}" "${SSL_DIR}/ca-root.pem"
 		cp -f "${ACME_INT_CA_ANCHOR}" "${SSL_DIR}/ca-int.pem"
 		cat \
@@ -554,14 +516,14 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			> "${SSL_DIR}/ca-chain.pem"
 		say "\t✅ Done!"
 	else
-		say "✅ Existing certificates and keys are still valid, will not generate new ones!"
+		ok "Existing certificates and keys are still valid, will not generate new ones!"
 		if [ ! -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
 			ACME_KEYSTORE_PASSWORD_FILE="${SSL_DIR}/keystore.pass"
 			SECURE_FILES+=("${ACME_KEYSTORE_PASSWORD_FILE}")
 		fi
 	fi
 
-	say "👉 Rendering the certificate files for HAProxy..."
+	doing "Rendering the certificate files for HAProxy..."
 	cat \
 		"${SSL_DIR}/cert.pem" \
 		"${SSL_DIR}/ca-chain.pem" \
@@ -571,8 +533,8 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 	say "\t✅ Done!"
 
 	# Find the Java keytool, if it's installed
-	if type -P keytool &>/dev/null ; then
-		say "👉 Rendering a PKCS12 Keystore with the new certificate & key..."
+	if type -P keytool &>/dev/null && ! "${ACME_WAIT}" ; then
+		doing "Rendering a PKCS12 Keystore with the new certificate & key..."
 		STOREPASS="$(<"${ACME_KEYSTORE_PASSWORD_FILE}")"
 
 		# First, create the base keystore
@@ -607,7 +569,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		# Finally, if other keystore types are required, use them
 		for STORETYPE in jks jceks ; do
 			is_supported "${STORETYPE^^}" || continue
-			say "👉 Creating a ${STORETYPE^^} Java Keystore with the new certificate & key..." 
+			doing "Creating a ${STORETYPE^^} Java Keystore with the new certificate & key..." 
 			STOREFILE="${SSL_DIR}/keystore.${STORETYPE}"
 			rm -f "${STOREFILE}" &>/dev/null || true
 
@@ -641,7 +603,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 		done
 	fi
 
-	say "👉 Setting tight permissions for the generated data..."
+	doing "Setting tight permissions for the generated data..."
 
 	# By default, owned by root but readable by ACM_GROUP
 	chown -R "root:${ACM_GROUP}" "${SSL_DIR}"
@@ -664,7 +626,9 @@ else
 	err "Can't find the provisioner password file at [${ACME_PASSWORD_FILE}], did not generate any new certificates or keystores"
 fi
 
-say "👉 Updating the trusted certificates"
+"${ACME_WAIT}" || create_marker "${ACME_WAIT_MARKER}" || warn "Failed to create the wait marker [${ACME_WAIT_MARKER}]"
+
+doing "Updating the trusted certificates"
 chown -R root:root "${ANCHORS}"
 chmod -R 0440 "${ANCHORS}"
 update-ca-trust extract || fail "Failed to update the CA trusts"

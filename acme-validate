@@ -1,40 +1,19 @@
 #!/bin/bash
 
 set -euo pipefail
+. /.functions
 
-timestamp()
-{
-	date -Ins -u
-}
+set_or_default SSL_DIR "/.ssl"
 
-say()
-{
-	echo -e "$(timestamp): ${@}"
-}
+require_exe openssl sha256sum
 
-err()
-{
-	say "❌ ${@}" 1>&2
-}
-
-fail()
-{
-	err "${@}"
-	exit ${EXIT_CODE:-1}
-}
-
-[ -v SSL_DIR ] || SSL_DIR=""
-[ -n "${SSL_DIR}" ] || SSL_DIR="/.ssl"
-
-type -P openssl &>/dev/null || fail "OpenSSL is not installed, can't continue"
-type -P sha256sum &>/dev/null || fail "The sha256sum executable is not installed, can't continue"
-
-say "👉 Validating the existing certificates and keys"
-[ -d "${SSL_DIR}" ] || fail "The SSL directory [${SSL_DIR}] does not exist"
+doing "Validating the existing certificates and keys"
+is_dir "${SSL_DIR}"
 
 PWFILE="${SSL_DIR}/keystore.pass"
 [ -v ACME_KEYSTORE_PASSWORD_FILE ] && PWFILE="${ACME_KEYSTORE_PASSWORD_FILE}"
-[ -n "${PWFILE}" ] || fail "The password file speficication cannot be empty"
+
+[ -n "${PWFILE}" ] || fail "The password file specification cannot be empty"
 [ -s "${PWFILE}" ] || fail "The password file must be a non-empty file"
 
 # Check that all the files are there
@@ -45,10 +24,10 @@ BASE_FILES=(
 	"${SSL_DIR}/cert.pem"
 	"${PWFILE}"
 )
+
 for f in "${BASE_FILES[@]}" ; do
-	[ -e "${f}" ] || fail "The file [${f}] is missing"
-	[ -s "${f}" ] || fail "The file [${f}] is either not a file, or of length 0"
-	[ -r "${f}" ] || fail "The file [${f}] is not readable by the user $(id -un)"
+	is_file_readable "${f}"
+	[ -s "${f}" ] || fail "The file [${f}] is of length 0"
 done
 
 # Check that the key is valid, and that the password decrypts it
@@ -64,8 +43,7 @@ openssl verify -CAfile "${SSL_DIR}/ca-root.pem" "${SSL_DIR}/ca-int.pem" &>/dev/n
 openssl verify -CAfile <(cat "${SSL_DIR}/ca-int.pem" "${SSL_DIR}/ca-root.pem") "${SSL_DIR}/cert.pem" &>/dev/null || fail "The certificate isn't signed by the intermediate CA"
 
 # Are the int and root certs deployed to the anchor directories?
-[ -v ANCHORS ] || ANCHORS=""
-[ -n "${ANCHORS}" ] || ANCHORS="/etc/pki/ca-trust/source/anchors"
+set_or_default ANCHORS "/etc/pki/ca-trust/source/anchors"
 
 for n in ca-int ca-root ; do
 	MASTER="${SSL_DIR}/${n}.pem"
@@ -79,5 +57,5 @@ for n in ca-int ca-root ; do
 	[ "${A}" == "${B}" ] || fail "The SHA-256 sums for [${MASTER}] and [${ANCHOR}] don't match: [${A}] != [${B}]"
 done
 
-say "✅ Certificate validation at [${SSL_DIR}] complete!"
+ok "Certificate validation at [${SSL_DIR}] complete!"
 exit 0

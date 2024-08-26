@@ -1,48 +1,18 @@
 #!/bin/bash
+
 set -euo pipefail
+. /.functions
 
-timestamp()
-{
-	date -Ins -u
-}
-
-say()
-{
-	echo -e "$(timestamp): ${@}"
-}
-
-err()
-{
-	say "❌ ${@}"
-}
-
-fail()
-{
-	err "${@}"
-	exit ${EXIT_CODE:-1}
-}
-
-DEBUG="false"
-case "${DEBUG,,}" in
-	true | t | yes | y | 1 | on | active | enabled ) DEBUG="true" ;;
-esac
+DEBUG="$(to_boolean "${DEBUG:-false}")"
 
 ${DEBUG} && set -x
 
-[ -v BASE_DIR ] || BASE_DIR=""
-[ -n "${BASE_DIR}" ] || BASE_DIR="/app"
+set_or_default BASE_DIR "/app"
+set_or_default INIT_DIR "${BASE_DIR}/init"
+set_or_default CONF_DIR "${BASE_DIR}/conf"
+set_or_default BOOT_DIR "${BASE_DIR}/boot"
+set_or_default BACKEND_STORE_SIZE_GB "8"
 
-[ -v INIT_DIR ] || INIT_DIR=""
-[ -n "${INIT_DIR}" ] || INIT_DIR="${BASE_DIR}/init"
-
-[ -v CONF_DIR ] || CONF_DIR=""
-[ -n "${CONF_DIR}" ] || CONF_DIR="${BASE_DIR}/conf"
-
-[ -v BOOT_DIR ] || BOOT_DIR=""
-[ -n "${BOOT_DIR}" ] || BOOT_DIR="${BASE_DIR}/boot"
-
-[ -v BACKEND_STORE_SIZE_GB ] || BACKEND_STORE_SIZE_GB=""
-[ -n "${BACKEND_STORE_SIZE_GB}" ] || BACKEND_STORE_SIZE_GB="8"
 [[ "${BACKEND_STORE_SIZE_GB}" =~ ^[1-9][0-9]*$ ]] || fail "The value for BACKEND_STORE_SIZE_GB is not a valid number: [${BACKEND_STORE_SIZE_GB}]"
 
 SMB_CONF="/etc/samba/smb.conf"
@@ -50,7 +20,7 @@ EXT_SMB_CONF="${CONF_DIR}/smb.conf"
 KRB_CONF="/etc/krb5.conf"
 EXT_KRB_CONF="${CONF_DIR}/krb5.conf"
 
-[ -v SAMBA_STATE ] || SAMBA_STATE="/var/lib/samba"
+set_or_default SAMBA_STATE "/var/lib/samba"
 SAMBA_PRIVATE="${SAMBA_STATE}/private"
 
 #
@@ -86,39 +56,15 @@ unset D2 D3
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 
-backup_file() {
+backup_file()
+{
 	local FILE="${1}"
 	[ -f "${FILE}" ] && mv -vf "${FILE}" "${FILE}.bak-${TIMESTAMP}"
 	return 0
 }
 
-ini_list_sections() {
-	local FILE="${1}"
-	[ -z "${FILE}" ] && return 1
-	grep "^[[:space:]]*\[[^\]\+]" "${FILE}" | sed -e 's/^\s*\[//g' -e 's/\].*$//g'
-}
-
-ini_has_section() {
-	local FILE="${1}"
-	local SECTION="${2}"
-	[ -z "${FILE}" ] && return 1
-	[ -z "${SECTION}" ] && return 1
-	ini_list_sections "${FILE}" | grep -q "${SECTION}"
-}
-
-ini_get_value() {
-	local FILE="${1}"
-	local SECTION="${2}"
-	local KEY="${3}"
-	[ -z "${FILE}" ] && return 1
-	[ -z "${SECTION}" ] && return 1
-	[ -z "${KEY}" ] && return 1
-	ini_has_section "${FILE}" "${SECTION}" || return 1
-	local KVP="$(sed -nr "/^\s*\[${SECTION}\]/,/\[/{/^\s*${KEY}\s*=/p}" "${FILE}" | tail -1)"
-	echo "${KVP#*=}" | sed -e 's;^[[:space:]]*;;g' -e 's;[[:space:]]*$;;g'
-}
-
-reset_data() {
+reset_data()
+{
 	say "Cleaning up any vestigial configurations"
 	rm -rf "${SAMBA_STATE}"/* /var/log/samba/*
 	tar -C / -xzf /samba-directory-templates.tar.gz
@@ -128,7 +74,8 @@ reset_data() {
 # This function will check to see if the instance can be considered
 # "configured"
 #
-is_initialized() {
+is_initialized()
+{
 	local CANDIDATES=()
 
 	#
@@ -213,7 +160,8 @@ is_initialized() {
 	return 0
 }
 
-cfg_mismatch() {
+cfg_mismatch()
+{
 	local L="${1}"
 	local R1="${2}"
 	local R2="${3}"
@@ -223,7 +171,8 @@ cfg_mismatch() {
 	say "This mismatch is unresolvable - please manually clean out the existing data files and logs, or fix the configuration file"
 }
 
-check_krb_conf() {
+check_krb_conf()
+{
 	[ -f "${EXT_KRB_CONF}" ] || return 1
 
 	local EXT_DOMAIN="$(ini_get_value "${EXT_KRB_CONF}" "libdefaults" "default_realm")"
@@ -232,7 +181,8 @@ check_krb_conf() {
 	return 0
 }
 
-check_smb_conf() {
+check_smb_conf()
+{
 	[ -f "${EXT_SMB_CONF}" ] || return 1
 
 	local EXT_REALM="$(ini_get_value "${EXT_SMB_CONF}" "global" "workgroup")"
@@ -244,7 +194,8 @@ check_smb_conf() {
 	return 0
 }
 
-configure_krb() {
+configure_krb()
+{
 	if check_krb_conf ; then
 		cp -f "${EXT_KRB_CONF}" "${KRB_CONF}"
 		return 0
@@ -255,10 +206,21 @@ configure_krb() {
 	#
 	mv "${KRB_CONF}" "${KRB_CONF}".orig
 	cat <<-EOF > "${KRB_CONF}"
-		[libdefaults]
+	[libdefaults]
+		default_realm = ${UDOMAIN}
+		kdc_timesync = 1
+		ccache_type = 4
+		forwardable = true
+		proxiable = true
 		dns_lookup_realm = false
 		dns_lookup_kdc = true
-		default_realm = ${UDOMAIN}
+		fcc-mit-ticketflags = true
+
+	[realms]
+		${UDOMAIN} = {
+			kdc = ${POD_IP:-127.0.0.1}
+			admin_server = ${POD_NAME:-$(hostname)}
+		}
 	EOF
 
 	backup_file "${EXT_KRB_CONF}"
@@ -267,7 +229,8 @@ configure_krb() {
 	return 0
 }
 
-configure_smb() {
+configure_smb()
+{
 	if check_smb_conf ; then
 		cp -f "${EXT_SMB_CONF}" "${SMB_CONF}"
 		return 0
@@ -313,12 +276,15 @@ configure_smb() {
 		fi
 	fi
 	sed -i "/\[global\]/a \
-		\\\tidmap_ldb:use rfc2307 = yes\\n\
-		wins support = yes\\n\
+		\\\twins support = yes\\n\
 		template shell = /bin/bash\\n\
-		winbind nss info = rfc2307\\n\
-		idmap config ${REALM}: range = 10000-20000\\n\
-		idmap config ${REALM}: backend = ad\
+		idmap config ${REALM}:backend = ad\\n\
+		idmap config ${REALM}:range = 10000-20000\\n\
+		idmap config ${REALM}:schema_mode = rfc2307\\n\
+		idmap config ${REALM}:unix_nss_info = yes\\n\
+		vfs objects = acl_xattr\\n\
+		map acl inherit = yes\\n\
+		store dos attributes = yes\
 		" "${SMB_CONF}"
 	if [ "${DNSFORWARDER}" != "NONE" ]; then
 		sed -i "/\[global\]/a \
@@ -352,7 +318,8 @@ configure_smb() {
 	return ${?}
 }
 
-configure_k8s() {
+configure_k8s()
+{
 	local DNS_IP=""
 
 	[ -v KUBERNETES_SERVICE_HOST ] || return 1
@@ -386,8 +353,7 @@ fi
 #
 # Download and deploy the required certificates
 #
-[ -v SSL_DIR ] || SSL_DIR="/.ssl"
-acme-init
+init_ssl
 
 # We perform this validation b/c ACME processing may be turned off
 if acme-validate &>/dev/null ; then
@@ -421,5 +387,4 @@ if [ -d "${BOOT_DIR}" ] ; then
 	)
 fi
 
-say "Launching Samba"
-exec /usr/sbin/samba -F
+execute /usr/sbin/samba -F

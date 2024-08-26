@@ -1,37 +1,14 @@
 #!/bin/bash
-SCRIPT="$(readlink -f "${BASH_SOURCE:-${0}}")"
-BASEDIR="$(dirname "${SCRIPT}")"
-SCRIPT="$(basename "${SCRIPT}")"
 
-[ -v SECRETS_DIR ] || SECRETS_DIR=""
-[ -n "${SECRETS_DIR}" ] || SECRETS_DIR="/app/secrets"
+set -euo pipefail
+. /.functions
+
+DEBUG="$(to_boolean "${DEBUG:-false}")"
+
+set_or_default BASE_DIR "/app"
+set_or_default SECRETS_DIR "${BASE_DIR}/secrets"
 export SECRETS_DIR
 
-read_setting()
-{
-	local SETTING="${1}"
-	local DEFAULT="${2:-}"
-
-	local RESULT="${DEFAULT}"
-
-	if [ -v "${SETTING}" ] ; then
-		# It's an envvar!! use it!
-		RESULT="${!SETTING}"
-	elif [ -d "${SECRETS_DIR}" ] ; then
-		# No envvar? What about a secret file?
-		local FILE="${SECRETS_DIR}/${SETTING}"
-		[ -e "${FILE}" ] && [ -f "${FILE}" ] && [ -r "${FILE}" ] && RESULT="$(<"${FILE}")"
-	fi
-
-	# Return the final value
-	echo -en "${RESULT}"
-	exit 0
-}
-
-DEBUG="false"
-case "${DEBUG,,}" in
-	true | t | yes | y | 1 | on | active | enabled ) DEBUG="true" ;;
-esac
 ${DEBUG} && set -x
 
 OUT="$(openssl s_client -connect localhost:636 -showcerts </dev/null 2>&1)"
