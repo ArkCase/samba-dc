@@ -264,7 +264,7 @@ configure_smb()
 		idmap config ${REALM}:range = 10000-20000\\n\
 		idmap config ${REALM}:schema_mode = rfc2307\\n\
 		idmap config ${REALM}:unix_nss_info = yes\\n\
-		vfs objects = acl_xattr\\n\
+		vfs objects = dfs_samba4 acl_xattr\\n\
 		map acl inherit = yes\\n\
 		store dos attributes = yes\
 		" "${SMB_CONF}"
