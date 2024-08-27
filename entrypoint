@@ -356,9 +356,11 @@ fi
 init_ssl
 
 # We perform this validation b/c ACME processing may be turned off
-if acme-validate &>/dev/null ; then
+if check_ssl &>/dev/null ; then
 	# Now deploy the generated files
 	LOCAL_CERT_HOME="${SAMBA_PRIVATE}/tls"
+	ensure_dir "${LOCAL_CERT_HOME}"
+
 	cp -vf "${SSL_DIR}/ca-chain.pem" "${LOCAL_CERT_HOME}/ca.pem"
 	cp -vf "${SSL_DIR}/cert.pem" "${LOCAL_CERT_HOME}/cert.pem"
 	chmod ug=r,o= "${LOCAL_CERT_HOME}"/*.pem
