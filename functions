@@ -1174,17 +1174,13 @@ check_ssl()
 	__ssl validate
 }
 
-#
-# usage: poll_url URL [MAX_WAIT [POLL_WAIT]]
-#
-# Poll the given URL with cURL, for at most
-# MAX_WAIT interval (may be specified as a time
-# string or the number of seconds, default 5
-# minutes), sleeping for POLL_WAIT (default 1)
-# between polling attempts.
-#
-poll_url()
+__poll_url()
 {
+	local __INSECURE="${1}"
+	shift
+
+	as_boolean "${__INSECURE}" && __INSECURE="-k"
+
 	local __URL="${1}"
 
 	local __MAX_WAIT="${2:-"5m"}"
@@ -1201,7 +1197,7 @@ poll_url()
 	local __NOW="${START}"
 	local __DURATION="0"
 	while true ; do
-		curl -fsSL -m 5 "${__URL}" &>/dev/null && break
+		curl ${__INSECURE} -fsSL -m 5 "${__URL}" &>/dev/null && break
 
 		__NOW="$(date +%s)"
 		__DURATION=$(( __NOW - __START )) || true
@@ -1221,4 +1217,29 @@ poll_url()
 	__DURATION="$(secs_to_timestr "$(( __NOW - __START ))")"
 	ok "The URL [${__URL}] responded after ${__DURATION:-0s}"
 	return 0
+}
+
+#
+# usage: poll_url URL [MAX_WAIT [POLL_WAIT]]
+#
+# Poll the given URL with cURL, for at most
+# MAX_WAIT interval (may be specified as a time
+# string or the number of seconds, default 5
+# minutes), sleeping for POLL_WAIT (default 1)
+# between polling attempts.
+#
+poll_url()
+{
+	__poll_url false "${@}"
+}
+
+#
+# usage: poll_url_insecure URL [MAX_WAIT [POLL_WAIT]]
+#
+# Same as poll_url but the server's certificate
+# validity will not be checked.
+#
+poll_url_insecure()
+{
+	__poll_url true "${@}"
 }

@@ -8,7 +8,7 @@ set_or_default SSL_DIR "/.ssl"
 require_exe openssl sha256sum
 
 doing "Validating the existing certificates and keys"
-is_dir "${SSL_DIR}"
+require_dir_readable "${SSL_DIR}"
 
 PWFILE="${SSL_DIR}/keystore.pass"
 [ -v ACME_KEYSTORE_PASSWORD_FILE ] && PWFILE="${ACME_KEYSTORE_PASSWORD_FILE}"

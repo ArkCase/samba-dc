@@ -464,7 +464,7 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			--san "localhost"
 		)
 
-		require_dir_readwrite "${SSL_DIR}"
+		ensure_dir "${SSL_DIR}"
 
 		if [ -v ACME_KEYSTORE_PASSWORD_FILE ] ; then
 			[ -n "${ACME_KEYSTORE_PASSWORD_FILE}" ] || fail "The variable ACME_KEYSTORE_PASSWORD_FILE may not be empty"
