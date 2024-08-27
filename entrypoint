@@ -27,9 +27,6 @@ SAMBA_PRIVATE="${SAMBA_STATE}/private"
 # Set and normalize variables
 #
 DOMAINPASS="${DOMAINPASS:-youshouldsetapassword}"
-JOIN="${JOIN:-false}"
-JOINSITE="${JOINSITE:-NONE}"
-MULTISITE="${MULTISITE:-false}"
 NOCOMPLEXITY="${NOCOMPLEXITY:-false}"
 INSECURELDAP="${INSECURELDAP:-false}"
 DNSFORWARDER="${DNSFORWARDER:-NONE}"
@@ -243,38 +240,23 @@ configure_smb()
 	# Should we do this?
 	reset_data
 
-	# If multi-site, we need to connect to the VPN before joining the domain
-	if [ "${MULTISITE,,}" == "true" ]; then
-		/usr/sbin/openvpn --config /docker.ovpn &
-		VPNPID="${!}"
-		# TODO: Find a more efficient way to do this?
-		say "Sleeping 30s to ensure VPN connects (${VPNPID})";
-		sleep 30
-	fi
-
 	# Set host ip option
 	HOSTIP_OPTION=""
 	[ "${HOSTIP}" != "NONE" ] && HOSTIP_OPTION="--host-ip=${HOSTIP}"
 
 	# If the finished file isn't there, this is brand new, we're not just moving to a new container
 	mv "${SMB_CONF}" "${SMB_CONF}.orig"
-	if [ "${JOIN,,}" == "true" ]; then
-		if [ "${JOINSITE}" == "NONE" ]; then
-			samba-tool domain join "${LDOMAIN}" DC -U"${REALM}\\administrator" --password="${DOMAINPASS}" --dns-backend=SAMBA_INTERNAL || return 1
-		else
-			samba-tool domain join "${LDOMAIN}" DC -U"${REALM}\\administrator" --password="${DOMAINPASS}" --dns-backend=SAMBA_INTERNAL --site="${JOINSITE}" || return 1
-		fi
-	else
-		PROVISION_FLAGS=()
-		[ -n "${HOSTIP_OPTION}" ] && PROVISION_FLAGS+=("${HOSTIP_OPTION}")
-		samba-tool domain provision --use-rfc2307 --domain="${REALM}" --backend-store=mdb --backend-store-size="${BACKEND_STORE_SIZE_GB}Gb" --realm="${UDOMAIN}" --server-role=dc --dns-backend=SAMBA_INTERNAL --adminpass="${DOMAINPASS}" "${PROVISION_FLAGS[@]}" || return 1
-		if [[ ${NOCOMPLEXITY,,} == "true" ]]; then
-			samba-tool domain passwordsettings set --complexity=off || return 1
-			samba-tool domain passwordsettings set --history-length=0 || return 1
-			samba-tool domain passwordsettings set --min-pwd-age=0 || return 1
-			samba-tool domain passwordsettings set --max-pwd-age=0 || return 1
-		fi
+
+	PROVISION_FLAGS=()
+	[ -n "${HOSTIP_OPTION}" ] && PROVISION_FLAGS+=("${HOSTIP_OPTION}")
+	samba-tool domain provision --use-rfc2307 --domain="${REALM}" --backend-store=mdb --backend-store-size="${BACKEND_STORE_SIZE_GB}Gb" --realm="${UDOMAIN}" --server-role=dc --dns-backend=SAMBA_INTERNAL --adminpass="${DOMAINPASS}" "${PROVISION_FLAGS[@]}" || return 1
+	if [[ ${NOCOMPLEXITY,,} == "true" ]]; then
+		samba-tool domain passwordsettings set --complexity=off || return 1
+		samba-tool domain passwordsettings set --history-length=0 || return 1
+		samba-tool domain passwordsettings set --min-pwd-age=0 || return 1
+		samba-tool domain passwordsettings set --max-pwd-age=0 || return 1
 	fi
+
 	sed -i "/\[global\]/a \
 		\\\twins support = yes\\n\
 		template shell = /bin/bash\\n\

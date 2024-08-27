@@ -18,7 +18,7 @@ ARG BASE_REPO="rockylinux"
 ARG BASE_VER="8.5"
 ARG BASE_IMG="${BASE_REPO}:${BASE_VER}"
 
-FROM "${SAMBA_IMG}" as src
+FROM "${SAMBA_IMG}" AS src
 
 #
 # For actual execution
@@ -113,4 +113,4 @@ ENV ACM_GROUP="root"
 
 HEALTHCHECK CMD /test-ready.sh
 
-ENTRYPOINT /entrypoint
+ENTRYPOINT [ "/entrypoint" ]
