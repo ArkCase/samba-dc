@@ -64,7 +64,7 @@ RUN yum -y install \
     yum -y update && \
     yum-config-manager --setopt=*.priority=50 --save
 COPY --from=ssg-src /ssg-ds.xml /ssg-xccdf.xml /
-COPY --from=src /root/rpmbuild/RPMS /rpm
+COPY --from=src /rpm /rpm
 COPY arkcase.repo /etc/yum.repos.d
 RUN yum -y install \
         attr \
