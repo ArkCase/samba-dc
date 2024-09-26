@@ -24,6 +24,15 @@ FROM "${SAMBA_IMG}" AS src
 # For actual execution
 #
 # FROM "${PUBLIC_REGISTRY}/${BASE_REPO}:${BASE_VER}"
+FROM "${BASE_IMG}" AS ssg-src
+
+# Copy the STIG file so it can be consumed by the scanner
+RUN yum -y install scap-security-guide && \
+    cp -vf "/usr/share/xml/scap/ssg/content/ssg-rl8-ds.xml" "/ssg-ds.xml" && \
+    cp -vf "/usr/share/xml/scap/ssg/content/ssg-rl8-xccdf.xml" "/ssg-xccdf.xml" && \
+    yum -y remove scap-security-guide && \
+    yum -y clean all
+
 FROM "${BASE_IMG}"
 
 #
@@ -54,6 +63,7 @@ RUN yum -y install \
     && \
     yum -y update && \
     yum-config-manager --setopt=*.priority=50 --save
+COPY --from=ssg-src /ssg-ds.xml /ssg-xccdf.xml /
 COPY --from=src /root/rpmbuild/RPMS /rpm
 COPY arkcase.repo /etc/yum.repos.d
 RUN yum -y install \
