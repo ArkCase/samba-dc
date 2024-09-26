@@ -68,6 +68,7 @@ COPY --from=src /rpm /rpm
 COPY arkcase.repo /etc/yum.repos.d
 RUN yum -y install \
         attr \
+        authselect \
         bind-utils \
         findutils \
         krb5-pkinit \
@@ -117,6 +118,11 @@ COPY --chown=root:root entrypoint test-ready.sh test-live.sh test-startup.sh sam
 COPY --chown=root:root functions /.functions
 COPY --chown=root:root acme-init acme-validate /usr/local/bin/
 RUN chmod 755 /entrypoint /test-ready.sh /test-live.sh /test-startup.sh /usr/local/bin/acme-init /usr/local/bin/acme-validate
+
+# STIG Remediations
+RUN authselect select minimal --force
+COPY --chown=root:root stig/ /usr/share/stig/
+RUN cd /usr/share/stig && ./run-all
 
 # This is required by acme-init. It's ok to set it to root for this container
 ENV ACM_GROUP="root"

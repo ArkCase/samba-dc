@@ -1,0 +1,31 @@
+#!/bin/bash
+SCRIPT="$(readlink -f "${BASH_ARGV0:-${BASH_SOURCE:-${0}}}")"
+BASEDIR="$(dirname "${SCRIPT}")"
+SCRIPT="$(basename "${SCRIPT}")"
+
+set -euo pipefail
+. /.functions
+
+run()
+{
+	running "Running: ${@}"
+	( exec "${@}" )
+	return ${?}
+}
+
+eyes "Running the STIG remediation scripts"
+while read S ; do
+	DN="$(dirname "${S}")"
+	BN="$(basename "${S}")"
+	MARKER="${DN}/.${BN}.applied"
+
+	# Avoid double-application of STIG fixups
+	[ -e "${MARKER}" ] && continue
+
+	running "Applying [${BN}]..."
+	OUT="$(run "${S}" 2>&1)" && ok "Remediation successful!" || fail "Remediation failed (rc=${?}):\n${OUT}"
+
+	echo -e "Remediated on $(date -Ins -u)\n\n${OUT}" > "${MARKER}" || fail "Failed to create the STIG remediation marker"
+
+done < <(find "${BASEDIR}" -type f -name "*.sh" -executable | sort)
+ok "Remediations complete!"
