@@ -8,7 +8,7 @@ ARG VER="4.14.5"
 ARG PKG="samba"
 
 ARG STEP_VER="0.27.4"
-ARG STEP_SRC="https://dl.step.sm/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli_${STEP_VER}_amd64.rpm"
+ARG STEP_SRC="https://dl.smallstep.com/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli-${STEP_VER}-1.x86_64.rpm"
 
 ARG SAMBA_REGISTRY="${PUBLIC_REGISTRY}"
 ARG SAMBA_REPO="arkcase/samba-rpmbuild"
