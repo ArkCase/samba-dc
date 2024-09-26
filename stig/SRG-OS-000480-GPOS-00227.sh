@@ -30,13 +30,3 @@ if [ ${?} -ne 0 ] ; then
         fi
     fi
 fi
-
-# Part two...
-
-readarray -t systemaccounts < <(awk -F: '($3 < 1000 && $3 != root \
-  && $7 != "\/sbin\/shutdown" && $7 != "\/sbin\/halt" && $7 != "\/bin\/sync") \
-  { print $1 }' /etc/passwd)
-
-for systemaccount in "${systemaccounts[@]}"; do
-	usermod -s /sbin/nologin "$systemaccount"
-done
