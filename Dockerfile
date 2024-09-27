@@ -23,7 +23,6 @@ FROM "${SAMBA_IMG}" AS src
 #
 # For actual execution
 #
-# FROM "${PUBLIC_REGISTRY}/${BASE_REPO}:${BASE_VER}"
 FROM "${BASE_IMG}" AS ssg-src
 
 # Copy the STIG file so it can be consumed by the scanner
