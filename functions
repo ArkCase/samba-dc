@@ -271,7 +271,8 @@ __require_dir()
 {
 	local __FUNC="${1}"
 	local __DIR="${2}"
-	"${__FUNC}" "${__DIR}" || fail_dir "${__DIR}" "${?}"
+	[ -n "${__FUNC}" ] && __FUNC="_${__FUNC}"
+	"is_dir${__FUNC}" "${__DIR}" || fail_dir "${__DIR}" "${?}"
 }
 
 #
@@ -283,7 +284,7 @@ __require_dir()
 #
 require_dir()
 {
-	__require_dir is_dir "${@}"
+	__require_dir "" "${@}"
 }
 
 #
@@ -296,7 +297,7 @@ require_dir()
 #
 require_dir_readable()
 {
-	__require_dir is_dir_readable "${@}"
+	__require_dir readable "${@}"
 }
 
 #
@@ -309,7 +310,7 @@ require_dir_readable()
 #
 require_dir_writable()
 {
-	__require_dir is_dir_writable "${@}"
+	__require_dir writable "${@}"
 }
 
 #
@@ -322,7 +323,7 @@ require_dir_writable()
 #
 require_dir_readwrite()
 {
-	__require_dir is_dir_readwrite "${@}"
+	__require_dir readwrite "${@}"
 }
 
 #
@@ -480,6 +481,78 @@ fail_file()
 	exit ${EXIT_CODE:-1}
 }
 
+__require_file()
+{
+	local __FUNC="${1}"
+	local __FILE="${2}"
+	[ -n "${__FUNC}" ] && __FUNC="_${__FUNC}"
+	"is_file${__FUNC}" "${__FILE}" || fail_file "${__FILE}" "${?}"
+}
+
+#
+# usage: require_file FILE
+#
+# Check if the file exists, and exit
+# the script with a non-0 exit status and an
+# error message if it is not.
+#
+require_file()
+{
+	__require_file "" "${@}"
+}
+
+#
+# usage: require_file_readable FILE
+#
+# Check if the file exists and is
+# readable, and exit the script with a
+# non-0 exit status and an error message
+# if it is not.
+#
+require_file_readable()
+{
+	__require_file readable "${@}"
+}
+
+#
+# usage: require_file_writable FILE
+#
+# Check if the file exists and is
+# writable, and exit the script with a
+# non-0 exit status and an error message
+# if it is not.
+#
+require_file_writable()
+{
+	__require_file writable "${@}"
+}
+
+#
+# usage: require_file_readwrite FILE
+#
+# Check if the file exists and is
+# readable AND writable, and exit the
+# script with a non-0 exit status and
+# an error message if it is not.
+#
+require_file_readwrite()
+{
+	__require_file readwrite "${@}"
+}
+
+#
+# usage: require_file_executable FILE
+#
+# Check if the file exists and is
+# executable, and exit the
+# script with a non-0 exit status and
+# an error message if it is not.
+#
+require_file_executable()
+{
+	__require_file executable "${@}"
+}
+
 #
 # usage: is_help_flag "${@}"
 #
@@ -606,7 +679,6 @@ csv_to_list()
 #
 to_array()
 {
-	# set -x
 	local __VAR="${1}"
 	local __EXPORT="false"
 	case "$(__get_var_flags "${__VAR}")" in
@@ -620,8 +692,16 @@ to_array()
 
 	if [ -v "${__VAR}" ] ; then
 		# Do the conversion
-		readarray -t "${__VAR}" < <(to_list "${!__VAR}")
-
+		local __V="${!__VAR}"
+		# Empty strings should convert to empty arrays
+		if [ -n "${__V}" ] ; then
+			# This will yield a non-empty array
+			readarray -t "${__VAR}" < <(to_list "${!__VAR}")
+		else
+			# Make sure it's an empty array
+			unset "${__VAR}"
+			declare -ga "${__VAR}"
+		fi
 		# Restore the export flag
 		"${__EXPORT}" && declare -x "${__VAR}"
 	else
@@ -633,7 +713,9 @@ to_array()
 
 __var_set_tool()
 {
-	[ ${#} -ge 1 ] || return 1
+	[ ${#} -ge 2 ] || return 1
+	local __FUNC="${1}"
+	shift
 
 	local __VAR="${1}"
 
@@ -668,7 +750,7 @@ __var_set_tool()
 
 	# If we've been given a function to process the result
 	# before we return it, we use it
-	[ ${#} -ge 3 ] && __RESULT="$("${3}" "${__RESULT}")"
+	[ -n "${__FUNC}" ] && __RESULT="$("${__FUNC}" "${__RESULT}")"
 
 	# Declare it, keeping its export status!
 	declare -g${__X} ${__VAR}="${__RESULT}"
@@ -689,7 +771,7 @@ __var_set_tool()
 #
 set_or_default()
 {
-	__var_set_tool "${1}" "${2:-}"
+	__var_set_tool "" "${@}"
 }
 
 #
@@ -700,7 +782,7 @@ set_or_default()
 #
 set_as_boolean()
 {
-	__var_set_tool "${1}" "${2:-false}" to_boolean
+	__var_set_tool to_boolean "${@}"
 }
 
 #
@@ -779,6 +861,13 @@ secs_to_timestr()
 	local __NUM="(0|[1-9][0-9]*)"
 
 	[ -n "${__STR}" ] || return 1
+
+	# If it's already a timestring,
+	# then output it in lowercase
+	[[ "${__STR^^}" =~ ^(${__NUM}D)?(${__NUM}H)?(${__NUM}M)?(${__NUM}S)?$ ]] && \
+		echo -n "${__STR,,}" && return 0
+
+	# It's not a timestring, so parse it
 	[[ "${__STR}" =~ ^${__NUM}$ ]] || return 1
 
 	local __RET=""
@@ -813,6 +902,12 @@ timestr_to_secs()
 
 	# It could be a time string, so parse it out
 	[ -n "${__STR}" ] || return 1
+
+	# If it's already a number, then it's
+	# a seconds count so output it verbatim
+	[[ "${__STR}" =~ ^${__NUM}$ ]] && echo -n "${__STR}" && return 0
+
+	# It's not a seconds count, so parse it!
 	[[ "${__STR^^}" =~ ^(${__NUM}D)?(${__NUM}H)?(${__NUM}M)?(${__NUM}S)?$ ]] || return 1
 
 	local __PARTS=( "${BASH_REMATCH[@]:1}" )
@@ -847,6 +942,19 @@ is_valid_hostname()
 }
 
 #
+# usage: is_valid_hostname_part HOSTNAME_PART
+#
+# Check that the given hostname part is valid as per RFC-1123,
+# and return 0 if it is, or a non-0 status if it is not.
+#
+is_valid_hostname_part()
+{
+	local __PART="${1}"
+	[[ "${__PART,,}" =~ ^([a-z0-9][-a-z0-9]*)?[a-z0-9]$ ]] || return 1
+	return 0
+}
+
+#
 # usage: is_valid_port PORT
 #
 # Check that the given PORT is a number between
@@ -862,7 +970,7 @@ is_valid_port()
 }
 
 #
-# usage: is_valid_ip IPADDRESS
+# usage: is_valid_ipv4 IPADDRESS
 #
 # Checks that the given IPADDRESS is a valid
 # IPv4 address (i.e. a 4-octet number).
@@ -974,9 +1082,17 @@ urlencode()
 	local __O=""
 	local __RESULT=""
 
+	local __SLASH="%2F"
+	as_boolean "${2:-true}" || __SLASH="/"
+
+	local __SPACE="%20"
+	as_boolean "${3:-true}" || __SPACE=" "
+
 	for (( __POS=0 ; __POS < __LEN ; __POS++ )); do
 		__C="${__STR:${__POS}:1}"
 		case "${__C}" in
+			/ ) __O="${__SLASH}" ;;
+			" " ) __O="${__SPACE}" ;;
 			[-_.~a-zA-Z0-9] ) __O="${__C}" ;;
 			* ) printf -v __O '%%%02x' "'${__C}" ; __O="${__O^^}" ;;
 		esac
@@ -986,14 +1102,25 @@ urlencode()
 }
 
 #
+# usage: urlencode_path STRING
+#
+# Encode the given string using the URLEncode mechanism, with
+# one deviation: slashes (/) aren't encoded as %2F.
+#
+urlencode_path()
+{
+	urlencode "${1}" "false"
+}
+
+#
 # usage: urlencode_query STRING
 #
 # Encode the given string using the URLEncode mechanism for URL Queries (i.e. spaces == '+')
 #
 urlencode_query()
 {
-	local __STR="$(urlencode "${1}")"
-	echo -n "${__STR//%20/+}"
+	local __STR="$(urlencode "${1}" "" "false")"
+	echo -n "${__STR// /+}"
 }
 
 #
@@ -1194,7 +1321,7 @@ __poll_url()
 
 	local __START="$(date +%s)"
 	waiting "Starting the polling cycle for [${__URL}] (for up to ${__MAX_WAIT_STR})..."
-	local __NOW="${START}"
+	local __NOW="${__START}"
 	local __DURATION="0"
 	while true ; do
 		curl ${__INSECURE} -fsSL -m 5 "${__URL}" &>/dev/null && break
@@ -1242,4 +1369,63 @@ poll_url()
 poll_url_insecure()
 {
 	__poll_url true "${@}"
+}
+
+#
+# usage: auth_params USER:PASSWORD
+#
+# Generate a CURL authentication configuration that can
+# be used securely via --config
+#
+auth_params()
+{
+	local USER=""
+	local PASS=""
+
+	case ${#} in
+		0 )	;;
+		1 )	USER="${1}"
+			[[ "${USER}" =~ ^([^:]*)(:(.*))?$ ]] || true
+			USER="${BASH_REMATCH[1]}"
+			PASS="${BASH_REMATCH[3]}"
+			;;
+		* )	USER="${1}"
+			PASS="${2}"
+			;;
+	esac
+
+	cat <<-EOF
+	user "${USER}:${PASS}"
+	EOF
+}
+
+#
+# usage: execute_unless VAR_NAME COMMAND [ARGS ...]
+#
+# Execute the given command conditionally, in case the given variable has
+# a boolean-false value (or is not set).
+#
+execute_unless()
+{
+	[ ${#} -ge 2 ] || fail "execute_unless requires the name of the variable AND the command to execute"
+
+	local __VAR="${1}"
+	shift
+
+	[[ "${__VAR}" =~ ^[a-zA-Z0-9_]+$ ]] || fail "Invalid variable name [${__VAR}]"
+
+	#
+	# Show the command about to be executed
+	#
+	running "${@@Q}"
+	if as_boolean "${!__VAR}" ; then
+		warn "${__VAR} is set to true, Skipping the command execution"
+		return 0
+	fi
+
+	#
+	# Proceed with the execution
+	#
+	( exec "${@}" )
+	return ${?}
 }

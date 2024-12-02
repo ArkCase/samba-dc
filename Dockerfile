@@ -2,6 +2,8 @@
 # Basic Parameters
 #
 ARG PUBLIC_REGISTRY="public.ecr.aws"
+ARG BASE_REGISTRY="${PUBLIC_REGISTRY}"
+ARG BASE_VER_PFX=""
 ARG ARCH="x86_64"
 ARG OS="linux"
 ARG VER="4.14.5"
@@ -10,15 +12,17 @@ ARG PKG="samba"
 ARG STEP_VER="0.27.4"
 ARG STEP_SRC="https://dl.smallstep.com/gh-release/cli/gh-release-header/v${STEP_VER}/step-cli-${STEP_VER}-1.x86_64.rpm"
 
-ARG SAMBA_REGISTRY="${PUBLIC_REGISTRY}"
+ARG SAMBA_REGISTRY="${BASE_REGISTRY}"
 ARG SAMBA_REPO="arkcase/samba-rpmbuild"
-ARG SAMBA_IMG="${SAMBA_REGISTRY}/${SAMBA_REPO}:${VER}"
+ARG SAMBA_BASE_VER_PFX="${BASE_VER_PFX}"
+ARG SAMBA_VER="${VER}"
+ARG SAMBA_RPM_IMG="${SAMBA_REGISTRY}/${SAMBA_REPO}:${SAMBA_BASE_VER_PFX}${SAMBA_VER}"
 
 ARG BASE_REPO="rockylinux"
 ARG BASE_VER="8.5"
 ARG BASE_IMG="${BASE_REPO}:${BASE_VER}"
 
-FROM "${SAMBA_IMG}" AS src
+FROM "${SAMBA_RPM_IMG}" AS src
 
 #
 # For actual execution
