@@ -220,6 +220,9 @@ set_or_default ACME_WAIT "false"
 set_or_default ACME_WAIT_MARKER "${SSL_DIR}/.acme-ready"
 set_or_default ACME_WAIT_TIMEOUT "$(timestr_to_secs 20m)"
 
+set_or_default SSL_EXTRA_SAN
+set_as_boolean SSL_EXTRA_SAN_STRICT
+
 # Validate the URL
 [[ "${ACME_URL}" =~ ^http(s)?://([^:/]+)(:([1-9][0-9]*))?(/.*)?$ ]] || fail "Malformed URL for the ACME CA: [${ACME_URL}]"
 
@@ -414,15 +417,15 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			if [ -n "${NAMESPACE}" ] ; then
 				if [ -n "${CLUSTER_DOMAIN}" ] ; then
 					[ -n "${FQSN}" ] || FQSN="${ACME_SERVICE_NAME}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-					SAN+=(--san "${FQSN}")
+					SAN+=("${FQSN}")
 				fi
-				SAN+=(--san "${ACME_SERVICE_NAME}.${NAMESPACE}")
+				SAN+=("${ACME_SERVICE_NAME}.${NAMESPACE}")
 			fi
-			SAN+=(--san "${ACME_SERVICE_NAME}")
+			SAN+=("${ACME_SERVICE_NAME}")
 
 			SVC_VAR="${ACME_SERVICE_NAME^^}_SERVICE_HOST"
 			if [ -v "${SVC_VAR}" ] ; then
-				SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=(--san "${SVC_IP}")
+				SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=("${SVC_IP}")
 			fi
 		fi
 
@@ -431,38 +434,53 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 				if [ -n "${CLUSTER_DOMAIN}" ] ; then
 					[ -n "${FQSN}" ] || FQSN="${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
 					SAN+=(
-						--san "${POD}.${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
-						--san "${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
+						"${POD}.${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
+						"${SERVICE}.${NAMESPACE}.svc.${CLUSTER_DOMAIN}"
 					)
 				fi
 				SAN+=(
-					--san "${POD}.${SERVICE}.${NAMESPACE}"
-					--san "${SERVICE}.${NAMESPACE}"
+					"${POD}.${SERVICE}.${NAMESPACE}"
+					"${SERVICE}.${NAMESPACE}"
 				)
 			fi
 			SAN+=(
-				--san "${POD}.${SERVICE}"
-				--san "${SERVICE}"
+				"${POD}.${SERVICE}"
+				"${SERVICE}"
 			)
 
 			SVC_VAR="${SERVICE^^}_SERVICE_HOST"
 			if [ -v "${SVC_VAR}" ] ; then
-				SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=(--san "${SVC_IP}")
+				SVC_IP="$(validate_ip "${!SVC_VAR}")" && [ "${SVC_IP}" != "127.0.01" ] && SAN+=("${SVC_IP}")
 			fi
 		fi
 
 		if [ -v POD_IP ] ; then
-			POD_IP="$(validate_ip "${POD_IP}")" && [ "${POD_IP}" != "127.0.01" ] && SAN+=(--san "${POD_IP}")
+			POD_IP="$(validate_ip "${POD_IP}")" && [ "${POD_IP}" != "127.0.01" ] && SAN+=("${POD_IP}")
 		fi
 
 		# TODO: Use the ${SERVICE_NAME}_SERVICE_HOST as the service IP
 
 		# The least specific values
 		SAN+=(
-			--san "${POD}"
-			--san "localhost.localdomain"
-			--san "localhost"
+			"${POD}"
+			"localhost.localdomain"
+			"localhost"
 		)
+
+		# Add the extra SAN names, if provided. The list can be separated by spaces, commas, or colons
+		if [ -n "${SSL_EXTRA_SAN}" ] ; then
+			# Turn the variable into an array, ignoring empty lines
+			readarray -t EXTRA_SAN < <(echo -n "${SSL_EXTRA_SAN}" | tr '[,:[:space:]]' '\n' | sed -e '/^\s*$/d')
+			for S in "${EXTRA_SAN[@]}" ; do
+				if is_valid_ipv4 "${S}" || is_valid_hostname "${S}" ; then
+					SAN+=("${S}")
+				else
+					# If we're strict, we explode ... we don't warn
+					as_boolean "${SSL_EXTRA_SAN_STRICT}" && CMD="fail" || CMD="warn"
+					"${CMD}" "The value [${S}] from SSL_EXTRA_SAN is neither a valid IP nor a valid hostname, ignoring it"
+				fi
+			done
+		fi
 
 		ensure_dir "${SSL_DIR}"
 
@@ -486,10 +504,19 @@ if [ -f "${ACME_PASSWORD_FILE}" ] ; then
 			fi
 		fi
 
+		# Make sure our SAN list is unique, and
+		# sorted, and pre-pend the --san argument
+		SAN_ARG=()
+		[ "${#SAN[@]}" -gt 0 ] && doing "Rendering certificate for the following SANs:"
+		while read S ; do
+			say "\t${S}"
+			SAN_ARG+=(--san "${S}")
+		done < <(echo "${SAN[@]}" | tr '[:space:]' '\n' | sed -e '/^\s*$/d' | sort -u)
+
 		doing "Rendering a new certificate for this pod's use"
 		step ca certificate \
 			"${FQSN:-${FQDN}}" "${SSL_DIR}/cert.pem" "${SSL_DIR}/cert.key" \
-			"${SAN[@]}" \
+			"${SAN_ARG[@]}" \
 			-f \
 			--size 4096 \
 			--kty RSA \
