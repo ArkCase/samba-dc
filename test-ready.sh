@@ -22,13 +22,10 @@ fi
 echo -e "Port 636/tcp seems to be listening and serving out certificates"
 ${DEBUG} && echo -e "${OUT}"
 
-REALM="$(read_setting "DOMAIN_REALM")"
 ROOT_DN="$(read_setting "DOMAIN_ROOT_DN")"
-USERNAME="$(read_setting "DOMAIN_USERNAME" "Administrator")"
-PASSWORD="$(read_setting "DOMAIN_PASSWORD")"
 
 ${DEBUG} && set -x
-OUT="$(ldapsearch -H ldaps://localhost -D "${REALM}\\${USERNAME}" -y <(echo -n "${PASSWORD}") -s one -b "${ROOT_DN}" "(objectClass=organizationalUnit)" dn 2>&1)"
+OUT="$(search -s one -b "${ROOT_DN}" "(objectClass=organizationalUnit)" dn 2>&1)"
 RC=${?}
 ${DEBUG} && set +x
 if [ ${RC} -ne 0 ] ; then

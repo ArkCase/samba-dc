@@ -119,8 +119,8 @@ EXPOSE 636
 #
 COPY --chown=root:root entrypoint test-ready.sh test-live.sh test-startup.sh samba-directory-templates.tar.gz /
 COPY --chown=root:root functions /.functions
-COPY --chown=root:root acme-init acme-validate /usr/local/bin/
-RUN chmod 755 /entrypoint /test-ready.sh /test-live.sh /test-startup.sh /usr/local/bin/acme-init /usr/local/bin/acme-validate
+COPY --chown=root:root acme-init acme-validate search /usr/local/bin/
+RUN chmod 755 /entrypoint /test-ready.sh /test-live.sh /test-startup.sh /usr/local/bin/acme-init /usr/local/bin/acme-validate /usr/local/bin/search
 
 # STIG Remediations
 RUN authselect select minimal --force
